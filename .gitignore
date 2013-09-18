@@ -1,2 +1,21 @@
+CMakeFiles
+CMakeCache.txt
+cmake_install.cmake
 build/
+bin/
+lib/
+msg_gen/
+srv_gen/
 *.pyc
+
+# Eclipse projects
+.project
+.cproject
+.settings
+Makefile.*
+Debug
+Release
+
+# General
+*~
+*.bak
