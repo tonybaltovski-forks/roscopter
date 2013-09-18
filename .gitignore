@@ -1,3 +1,7 @@
+# Remove Mavlink
+mavlink/
+
+# ROS Components
 CMakeFiles
 CMakeCache.txt
 cmake_install.cmake
