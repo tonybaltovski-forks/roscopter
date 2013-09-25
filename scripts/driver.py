@@ -367,7 +367,7 @@ pub_current_mission = rospy.Publisher('/apm/current_mission', roscopter.msg.Curr
 pub_mission_item = rospy.Publisher('/apm/mission_item', roscopter.msg.MissionItem)
 
 if opts.enable_rc_control:
-    rospy.Subscriber("/apm/control", roscopter.msg.Control , mav_control)
+    #rospy.Subscriber("/apm/control", roscopter.msg.Control , mav_control)
     rospy.Subscriber("/apm/send_rc", roscopter.msg.RC , send_rc)
 
 if opts.enable_waypoint_control:
