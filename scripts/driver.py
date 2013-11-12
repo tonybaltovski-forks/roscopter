@@ -359,19 +359,19 @@ pub_state = rospy.Publisher('state', roscopter.msg.State)
 pub_vfr_hud = rospy.Publisher('vfr_hud', roscopter.msg.VFR_HUD)
 pub_attitude = rospy.Publisher('attitude', roscopter.msg.Attitude)
 pub_raw_imu =  rospy.Publisher('raw_imu', roscopter.msg.Mavlink_RAW_IMU)
-pub_status = rospy.Publisher('/apm/status', roscopter.msg.Status)
-pub_filtered_pos = rospy.Publisher('/apm/filtered_pos', roscopter.msg.FilteredPosition)
-pub_control_output = rospy.Publisher('/apm/controller_output', roscopter.msg.ControllerOutput)
-pub_current_mission = rospy.Publisher('/apm/current_mission', roscopter.msg.CurrentMission)
-pub_mission_item = rospy.Publisher('/apm/mission_item', roscopter.msg.MissionItem)
+pub_status = rospy.Publisher('status', roscopter.msg.Status)
+pub_filtered_pos = rospy.Publisher('filtered_pos', roscopter.msg.FilteredPosition)
+pub_control_output = rospy.Publisher('controller_output', roscopter.msg.ControllerOutput)
+pub_current_mission = rospy.Publisher('current_mission', roscopter.msg.CurrentMission)
+pub_mission_item = rospy.Publisher('mission_item', roscopter.msg.MissionItem)
 
 if opts.enable_rc_control:
-    #rospy.Subscriber("/apm/control", roscopter.msg.Control , mav_control)
-    rospy.Subscriber("/apm/send_rc", roscopter.msg.RC , send_rc)
+    #rospy.Subscriber("control", roscopter.msg.Control , mav_control)
+    rospy.Subscriber("send_rc", roscopter.msg.RC , send_rc)
 
 if opts.enable_waypoint_control:
-    rospy.Service("/apm/command", roscopter.srv.APMCommand, command_callback)
-    rospy.Subscriber("/apm/waypoint", roscopter.msg.Waypoint , send_waypoint)
+    rospy.Service("command", roscopter.srv.APMCommand, command_callback)
+    rospy.Subscriber("waypoint", roscopter.msg.Waypoint , send_waypoint)
 
 #state
 gps_msg = NavSatFix()
