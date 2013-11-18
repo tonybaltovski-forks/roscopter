@@ -6,6 +6,7 @@ from sensor_msgs.msg import NavSatFix, NavSatStatus, Imu
 import roscopter.msg
 import roscopter.srv
 import sys,struct,time,os
+import math
 
 # Auto Pilot modes
 # Custom modes defined in ArduCopter defines.h file
@@ -38,6 +39,7 @@ parser.add_option("--source-system", dest='SOURCE_SYSTEM', type='int',
 parser.add_option("--enable-rc-control",dest="enable_rc_control", default=False, help="Enable listning to control messages")
 parser.add_option("--enable-waypoint-control",dest="enable_waypoint_control", default=True, help="Enable listning to waypoint messages")
 parser.add_option("--vehicle-name", dest="vehicle_name", default="", help="Name of Vehicle")
+
 
 (opts, args) = parser.parse_args()
 
@@ -91,8 +93,8 @@ def command_callback(req):
         return True
     elif req.command == roscopter.srv._APMCommand.APMCommandRequest.CMD_ARM:
         print ("ARMING")
-#        master.arducopter_arm()        # One method commented out for the time
-        master.mav.command_long_send(master.target_system, mavutil.mavlink.MAV_COMP_ID_SYSTEM_CONTROL,
+        master.arducopter_arm()        # One method commented out for the time
+        '''master.mav.command_long_send(master.target_system, mavutil.mavlink.MAV_COMP_ID_SYSTEM_CONTROL,
                                  mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 
                                  0, # confirmation
                                  1, # param1 (1 to indicate arm)
@@ -102,6 +104,7 @@ def command_callback(req):
                                  0, # param5
                                  0, # param6
                                  0) # param7
+        '''
         return True
     elif req.command == roscopter.srv._APMCommand.APMCommandRequest.CMD_DISARM:
         print ("DISARMING")
@@ -375,10 +378,12 @@ if opts.enable_waypoint_control:
 
 #state
 gps_msg = NavSatFix()
+
 current_mission_msg = roscopter.msg.CurrentMission()
 
 
 def mainloop():
+    global gps_msg
     rospy.init_node('roscopter')
     while not rospy.is_shutdown():
         rospy.sleep(0.001)
@@ -405,9 +410,26 @@ def mainloop():
                 fix = NavSatStatus.STATUS_NO_FIX
                 if msg.fix_type >=3:
                     fix=NavSatStatus.STATUS_FIX
-                pub_gps.publish(NavSatFix(latitude = msg.lat/1e07,
+
+                header = Header()
+                header.frame_id = 'base_link'# '/gps'
+                header.stamp = rospy.Time.now()
+
+                #print("Hdop is %d", msg.eph)
+                #print("Vdop is %d", msg.epv)
+
+                sigma = math.sqrt((3.04 * msg.eph**2)**2 + 3.57**2)
+                position_covariance = [0] * 9
+                position_covariance[0] = sigma #9999
+                position_covariance[4] = sigma #9999
+                position_covariance[8] = sigma #9999
+
+                pub_gps.publish(NavSatFix(header = header,
+                                          latitude = msg.lat/1e07,
                                           longitude = msg.lon/1e07,
                                           altitude = msg.alt/1e03,
+                                          position_covariance=position_covariance,
+                                          position_covariance_type=NavSatFix.COVARIANCE_TYPE_APPROXIMATED,
                                           status = NavSatStatus(status=fix, service = NavSatStatus.SERVICE_GPS) 
                                           ))
             #pub.publish(String("MSG: %s"%msg))
