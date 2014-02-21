@@ -33,7 +33,8 @@ parser = OptionParser("roscopter.py [options]")
 parser.add_option("--baudrate", dest="baudrate", type='int',
                   help="master port baud rate", default=115200)
 parser.add_option("--device", dest="device", default="/dev/ttyACM0", help="serial device")
-parser.add_option("--rate", dest="rate", default=10, type='int', help="requested stream rate")
+parser.add_option("--rate", dest="rate", default=1000, type='int', help="parsing rate for roscopter")
+parser.add_option("--mavlink_rate", dest="mavlink_rate", default=10, type='int', help="requested stream rate")
 parser.add_option("--source-system", dest='SOURCE_SYSTEM', type='int',
                   default=255, help='MAVLink source system for this GCS')
 parser.add_option("--enable-rc-control",dest="enable_rc_control", default=False, help="enable listening to control messages")
@@ -441,8 +442,10 @@ mission_request_buffer = []
 def mainloop():
     global gps_msg
     rospy.init_node('roscopter')
+
+    r = rospy.Rate(opts.rate)
     while not rospy.is_shutdown():
-        rospy.sleep(0.001)
+        r.sleep()
         msg = master.recv_match(blocking=False)
         if not msg:
             continue
@@ -582,16 +585,19 @@ def wait_heartbeat(m):
     m.wait_heartbeat()
     print("Heartbeat from APM (system %u component %u)" % (m.target_system, m.target_system))
 
+##******************************************************************************
+# MAIN START USING THESE FUNCTIONS
+#*******************************************************************************
 # wait for the heartbeat msg to find the system ID
 wait_heartbeat(master)
 
 # waiting for 10 seconds for the system to be ready
 print("Sleeping for 10 seconds to allow system, to be ready")
 rospy.sleep(10)
-print("Sending all stream request for rate %u" % opts.rate)
+print("Sending all stream request for mavlink_rate %u" % opts.mavlink_rate)
 
 master.mav.request_data_stream_send(master.target_system, master.target_component,
-                                    mavutil.mavlink.MAV_DATA_STREAM_ALL, opts.rate, 1)
+                                    mavutil.mavlink.MAV_DATA_STREAM_ALL, opts.mavlink_rate, 1)
 if __name__ == '__main__':
     try:
         # initially clear waypoints and start mainloop
