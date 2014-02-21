@@ -205,17 +205,18 @@ def transmit_waypoint(data, index, wp_type):
 
     # Dummy Waypoint
     master.mav.mission_item_send(master.target_system, master.target_component, 
-                                 index,          # Waypoint Number
-                                 0, wp_type,   
-                                 0,              # Is Current Waypoint
-                                 0,              # Should Autocontinue to next wp
-                                 data.posAcc,    # NAV Command: Radius for accept within range (meters)
-                                 data.holdTime,  # NAV Command: Hold Time (ms)
-                                 0,              # LOITER Command: Orbit to circle (meters). Positive clockwise, Negative counter-clockwise
-                                 data.yawFrom,   # NAV/LOITER Command: Yaw Orientation [o to 360 degrees]
-                                 data.latitude,  # local: x position, global: latitude
-                                 data.longitude, # local: y position, global: longitude
-                                 data.altitude)  # local: z position, global: altitude
+                                 index,              # Waypoint Number
+                                 0, 
+                                 wp_type,            # Mission Item Type
+                                 0,                  # Is Current Waypoint
+                                 1,                  # Should Autocontinue to next wp
+                                 data.holdTime/1000,      # NAV Command: Hold Time (convert from ms to seconds)
+                                 data.posAcc/1000,   # NAV Command: Radius for accept within range (convert from mm to meters)
+                                 0,                  # LOITER Command: Orbit to circle (meters). Positive clockwise, Negative counter-clockwise
+                                 data.yawFrom/1000,  # NAV/LOITER Command: Yaw Orientation [o to 360 degrees]
+                                 data.latitude/1E7,  # local: x position, global: latitude
+                                 data.longitude/1E7, # local: y position, global: longitude
+                                 data.altitude/1000)  # local: z position, global: altitude (convert from mm to meters)
     mission_request_buffer.pop(0)
 
     rospy.loginfo ("Waypoint %d: Lat=%f, Lon=%f, Alt=%f, posAcc=%f, holdTime=%f, yawFrom=%f"

@@ -14,14 +14,14 @@ def publish_waypt():
         for i in range (0,20):
             wayptMsg = roscopter.msg.Waypoint()
 
-            wayptMsg.latitude = (29.662161 + i)
-            wayptMsg.longitude = (-82.3777551 + i)
+            wayptMsg.latitude = (29.662161 + i) * 1E7
+            wayptMsg.longitude = (-82.3777551 + i) * 1E7
             wayptMsg.altitude = 100 + i;
-            wayptMsg.posAcc = 10 + i;
+            wayptMsg.posAcc = (10 + i) * 1000;
             wayptMsg.speedTo = 20 + i;
-            wayptMsg.altitude = 30 + i;
-            wayptMsg.holdTime = 40 + i;
-            wayptMsg.yawFrom = 50 + i;
+            wayptMsg.altitude = (30 + i) * 1000;
+            wayptMsg.holdTime = (40 + i) * 1000;        # Assume defined in seconds
+            wayptMsg.yawFrom = (50 + i) * 1000;
 
             wayptListMsg.waypoints.append(wayptMsg);
 

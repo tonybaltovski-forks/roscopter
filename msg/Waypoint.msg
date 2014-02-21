@@ -1,22 +1,22 @@
-# Latitude and Longitude given in deg * 10^7
-float64 latitude
-float64 longitude
-
-# max. speed to travel to waypoint in % of 100
-float64 speedTo
+# latitude and longitude given in decimal degrees (* 10^7)
+int32 latitude
+int32 longitude
 
 # height in mm
-float64 altitude
-
-# time to stay at waypoint in 1/100ths
-float64 holdTime
-
-# yawFrom given in deg * 1000
-float64 yawFrom
+int32 altitude
 
 # posAcc given in mm
-float64 posAcc
+uint16 posAcc
 
-# panAngle,tiltAngle given in deg *1000
-float64 panAngle
-float64 tiltAngle
+# max speed to travel to waypoint in % of 100
+uint8 speedTo
+
+# time to stay at waypoint in ms
+uint16 holdTime
+
+# yawFrom angle given in degrees (* 1000)
+int32 yawFrom
+
+# camera pan and tilt angles during waypoint travel given in degrees (* 1000)
+int32 panAngle
+int32 tiltAngle
