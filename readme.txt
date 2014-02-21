@@ -1,4 +1,3 @@
-1. In the source folder checkout and build mavlink
-git clone https://github.com/mavlink/mavlink.git
+Please see the wiki pages for instructions on how to install and use.
 
-2. build the roscopter package using rosmake
+Note that there is a mavlink submodule included in this repository that may need updated at certain times.

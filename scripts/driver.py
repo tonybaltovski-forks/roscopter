@@ -8,9 +8,10 @@ import roscopter.srv
 import sys,struct,time,os
 import math
 
-# Auto Pilot modes
-# Custom modes defined in ArduCopter defines.h file
-# ----------------
+##******************************************************************************
+# Auto Pilot defines for use throughout the code.  These are custom modes
+# defined in teh Arducopter Code under the defines.h file
+#*******************************************************************************
 STABILIZE = 0                     # hold level position
 ACRO = 1                          # rate control
 ALT_HOLD = 2                      # AUTO control
@@ -23,10 +24,9 @@ POSITION = 8                      # AUTO control
 LAND = 9                          # AUTO control
 OF_LOITER = 10                    # Hold a single location using optical flow
 
-
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), '../mavlink/pymavlink'))
-
-# Parse any messages that follow the node command
+##******************************************************************************
+# Parse any arguments that follow the node command
+#*******************************************************************************
 from optparse import OptionParser
 parser = OptionParser("roscopter.py [options]")
 
@@ -36,14 +36,17 @@ parser.add_option("--device", dest="device", default="/dev/ttyACM0", help="seria
 parser.add_option("--rate", dest="rate", default=10, type='int', help="requested stream rate")
 parser.add_option("--source-system", dest='SOURCE_SYSTEM', type='int',
                   default=255, help='MAVLink source system for this GCS')
-parser.add_option("--enable-rc-control",dest="enable_rc_control", default=False, help="Enable listning to control messages")
-parser.add_option("--enable-waypoint-control",dest="enable_waypoint_control", default=True, help="Enable listning to waypoint messages")
-parser.add_option("--vehicle-name", dest="vehicle_name", default="", help="Name of Vehicle")
-
+parser.add_option("--enable-rc-control",dest="enable_rc_control", default=False, help="enable listening to control messages")
+parser.add_option("--enable-waypoint-control",dest="enable_waypoint_control", default=True, help="enable listening to waypoint messages")
+parser.add_option("--vehicle-name", dest="vehicle_name", default="", help="name of vehicle")
+parser.add_option("--default-launch-altitude",dest="default_launch_altitude", default=5, help="default launch altitude in meters")
 
 (opts, args) = parser.parse_args()
 
-
+##******************************************************************************
+# Import and connect to the apm through mavlink
+#*******************************************************************************
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), '../mavlink/pymavlink'))
 import mavutil
 
 # create a mavlink serial instance
@@ -53,14 +56,11 @@ if opts.device is None:
     print("You must specify a serial device")
     sys.exit(1)
 
-def wait_heartbeat(m):
-    '''wait for a heartbeat so we know the target system IDs'''
-    print("Waiting for APM heartbeat")
-    m.wait_heartbeat()
-    print("Heartbeat from APM (system %u component %u)" % (m.target_system, m.target_system))
 
-
-#This does not work yet because APM does not have it implemented
+##******************************************************************************
+ # Name:    mav_control_cb
+ # Function is a placeholder until implemented in the APM
+#*******************************************************************************
 #def mav_control(data):
 #    '''
 #    Set roll, pitch and yaw.
@@ -72,27 +72,45 @@ def wait_heartbeat(m):
 #    master.mav.set_roll_pitch_yaw_thrust_send(master.target_system, master.target_component,
 #                                                                data.roll, data.pitch, data.yaw, data.thrust)
 #
-#    print ("sending control: %s"%data)
+#    rospy.loginfo ("sending control: %s"%data)
 
 
-def send_rc(data):
+##******************************************************************************
+ # Name:    send_rc_cb
+ # Purpose: Callback function for "send_rc" message. Takes incoming 8 integers
+ #              and passes to the various PWM RC Channels on the APM. May be
+ #              used for direct control of the vehicle. Sending RC values on a 
+ #              channel overrides that channel on a physical Transmitter. To
+ #              Ignore a channel, a value of -1 or "65535" should be written. To
+ #              Return a channel back to a physical transmitter, write a 0. 
+ # Params:  data: Desired PWM values for 8 RC Channels
+#*******************************************************************************
+def send_rc_cb(data):
     master.mav.rc_channels_override_send(master.target_system, master.target_component,data.channel[0],data.channel[1],data.channel[2],data.channel[3],data.channel[4],data.channel[5],data.channel[6],data.channel[7])
-    print ("sending rc: %s"%data)
+    rospy.loginfo ("sending rc: %s"%data)
 
-# Callback for Command Client
-# Specific command values are in the service description for APMCommand
-def command_callback(req):
+
+##******************************************************************************
+ # Name:    command_cb
+ # Purpose: Callback function for "command" Service.  Specific commands are used
+ #              to control functions such as Launch, Land, Arm, Disarm, etc.
+ #              All commands may be found within the "APMCommand" Service file.
+ #              New commands should be entered there to keep uniform constants
+ #              throughout calling functions
+ # Params:  data: Requested command variable
+#*******************************************************************************
+def command_cb(req):
     if req.command == roscopter.srv._APMCommand.APMCommandRequest.CMD_LAUNCH:
-        print ("Launch Command")
+        rospy.loginfo ("Launch Command")
         launch()
         #goto_waypoint()
         return True
     elif req.command == roscopter.srv._APMCommand.APMCommandRequest.CMD_LAND:
-        print ("Land Command")
+        rospy.loginfo ("Land Command")
         land()
         return True
     elif req.command == roscopter.srv._APMCommand.APMCommandRequest.CMD_ARM:
-        print ("ARMING")
+        rospy.loginfo ("ARMING")
         master.arducopter_arm()        # One method commented out for the time
         '''master.mav.command_long_send(master.target_system, mavutil.mavlink.MAV_COMP_ID_SYSTEM_CONTROL,
                                  mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 
@@ -107,7 +125,7 @@ def command_callback(req):
         '''
         return True
     elif req.command == roscopter.srv._APMCommand.APMCommandRequest.CMD_DISARM:
-        print ("DISARMING")
+        rospy.loginfo ("DISARMING")
         master.arducopter_disarm()
         '''master.mav.command_long_send(master.target_system, master.target_component,
                                  mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 
@@ -121,26 +139,32 @@ def command_callback(req):
                                  0) # param7
         '''
         return True
+
+    elif req.command == roscopter.srv._APMCommand.APMCommandRequest.CMD_SET_MANUAL:
+        rospy.loginfo ("SET MODE TO MANUAL")
+        master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, MANUAL)
+        return True
         
     elif req.command == roscopter.srv._APMCommand.APMCommandRequest.CMD_SET_STABILIZE:
-        print ("SET MODE TO STABILIZE")
+        rospy.loginfo ("SET MODE TO STABILIZE")
         master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, STABILIZE)
         return True
 
     elif req.command == roscopter.srv._APMCommand.APMCommandRequest.CMD_SET_ALT_HOLD:
-        print ("SET MODE TO ALT HOLD")
+        rospy.loginfo ("SET MODE TO ALT HOLD")
+#        set_current_waypoint(3)
         master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, ALT_HOLD)
         return True
 
     elif req.command == roscopter.srv._APMCommand.APMCommandRequest.CMD_SET_AUTO:
-        print ("SET MODE TO AUTO")
+        rospy.loginfo ("SET MODE TO AUTO")
         master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, AUTO)
         rospy.sleep(0.1)
         master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, AUTO)
         return True
 
     elif req.command == roscopter.srv._APMCommand.APMCommandRequest.CMD_SET_LOITER:
-        print ("SET MODE TO LOITER")
+        rospy.loginfo ("SET MODE TO LOITER")
         master.set_mode_loiter()
         #master.mav.command_long_send(master.target_system, master.target_component,
         #                                 mavutil.mavlink.MAV_CMD_NAV_LOITER_UNLIM, 0, 0, 0, 0, 0, 0, 0, 0)
@@ -150,78 +174,152 @@ def command_callback(req):
         return 1
 
     elif req.command == roscopter.srv._APMCommand.APMCommandRequest.CMD_SET_LAND:
-        print ("SET MODE TO LAND")
+        rospy.loginfo ("SET MODE TO LAND")
         master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, LAND)
         rospy.sleep(0.1)
         master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, LAND)
         return True
 
     elif req.command == roscopter.srv._APMCommand.APMCommandRequest.RETURN_RC_CONTROL:
-        print ("RETURN RC CONTROL")
+        rospy.loginfo ("RETURN RC CONTROL")
         master.mav.rc_channels_override_send(master.target_system, master.target_component,0,0,0,0,0,0,0,0)
         return True
 
-# Send a waypoint collected from Waypoint Message
-def send_waypoint(data):
+##******************************************************************************
+ # Name:    transmit_waypoint
+ # Purpose: Function to transmit waypoint. Initally, the function holds until 
+ #              mission_request_buffer holds the desired index of waypoint to be
+ #              transmitted. This number is designated by the Mavlink 
+ #              "MISSION_REQUEST" message.  The waypoint is then transmitted and
+ #              its value popped off the buffer.
+ # Params:  data: Data to be used to transmit for waypoint
+ #              (NOTE): Uses the roscopter.msg.waypoint structure for data
+ #          index: The Waypoint Number to be transmitted
+ #          wp_type: Type of waypoint item designated by Mavlink:
+ #              https://pixhawk.ethz.ch/mavlink/
+#*******************************************************************************
+def transmit_waypoint(data, index, wp_type):
+    while (index not in mission_request_buffer):
+        pass
+
+    # Dummy Waypoint
+    master.mav.mission_item_send(master.target_system, master.target_component, 
+                                 index,          # Waypoint Number
+                                 0, wp_type,   
+                                 0,              # Is Current Waypoint
+                                 0,              # Should Autocontinue to next wp
+                                 data.posAcc,    # NAV Command: Radius for accept within range (meters)
+                                 data.holdTime,  # NAV Command: Hold Time (ms)
+                                 0,              # LOITER Command: Orbit to circle (meters). Positive clockwise, Negative counter-clockwise
+                                 data.yawFrom,   # NAV/LOITER Command: Yaw Orientation [o to 360 degrees]
+                                 data.latitude,  # local: x position, global: latitude
+                                 data.longitude, # local: y position, global: longitude
+                                 data.altitude)  # local: z position, global: altitude
+    mission_request_buffer.pop(0)
+
+    rospy.loginfo ("Waypoint %d: Lat=%f, Lon=%f, Alt=%f, posAcc=%f, holdTime=%f, yawFrom=%f"
+        %(index, data.latitude, data.longitude, data.altitude,
+          data.posAcc, data.holdTime, data.yawFrom))
+
+##******************************************************************************
+ # Name:    waypoint_cb
+ # Purpose: Callback function for "waypoint".  Initially transmit dummy point
+ #              and then take single waypoint and transmit.  Method follows:
+ #              http://qgroundcontrol.org/mavlink/waypoint_protocol
+ # Params:  data: Single waypoint to be transmitted
+#*******************************************************************************
+def waypoint_cb(data):
+    rospy.loginfo ("Sending Single Waypoint")
     # Number of waypoints (Plus Dummy Waypoint)
     master.mav.mission_count_send(master.target_system, master.target_component, 2)
     
-    # Dummy Waypoint
-    master.mav.mission_item_send(master.target_system, master.target_component, 
-                                 0,     # Waypoint Number
-                                 0, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
-                                 0,     # Is Current Waypoint
-                                 0,     # Should Autocontinue to next wp
-                                 0,     # NAV Command: Radius for accept within range (meters)
-                                 0,     # NAV Command: Hold Time (ms)
-                                 0,     # LOITER Command: Orbit to circle (meters).  Positive clockwise, Negative counter-clockwise
-                                 0,     # NAV/LOITER Command: Yaw Orientation [o to 360 degrees]
-                                 gps_msg.latitude,  # local: x position, global: latitude
-                                 gps_msg.longitude, # local: y position, global: longitude
-                                 0)          # local: z position, global: altitude
-    rospy.sleep(1)
-
-    # Waypoint to be sent
-    print ("Waypoint to be sent: Lat=%f, Lon=%f, Alt=%f, posAcc=%f, holdTime=%f, yawFrom=%f"
-            %(data.latitude, data.longitude, data.altitude, data.posAcc, data.holdTime,
-              data.yawFrom))
-
-    master.mav.mission_item_send(master.target_system, master.target_component, 
-                                 1,     # Waypoint Number
-                                 0, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
-                                 1,     # Is Current Waypoint
-                                 0,     # Should Autocontinue to next wp
-                                 data.posAcc,     # NAV Command: Radius for accept within range (meters)
-                                 data.holdTime,     # NAV Command: Hold Time (ms)
-                                 0,     # LOITER Command: Orbit to circle (meters).  Positive clockwise, Negative counter-clockwise
-                                 data.yawFrom,     # NAV/LOITER Command: Yaw Orientation [o to 360 degrees]
-                                 data.latitude,     # local: x position, global: latitude
-                                 data.longitude,     # local: y position, global: longitude
-                                 data.altitude)    # local: z position, global: altitude
-
-    rospy.sleep(1)
+        # Send Dummy Waypoint
+    dummy_wp = roscopter.msg.Waypoint()
+    dummy_wp.latitude = gps_msg.latitude
+    dummy_wp.longitude = gps_msg.longitude
+    
+    transmit_waypoint(dummy_wp, 0, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT)
+        
+    # Send waypoint
+    transmit_waypoint(data, 1, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT)
 
     # Set current waypoint to be waypoint 1
-    set_current_waypoint()
-    receive_waypoint(1)
-    print ("Sending waypoint")
+    set_current_waypoint(1)
+    rospy.loginfo ("Waypoint Sent")
 
+##******************************************************************************
+ # Name:    waypoint_list_cb
+ # Purpose: Callback function for "waypoint_list".  Initially transmit dummy
+ #              point and then take list of waypoints from waypoint list and
+ #              transmit.  Method follows: 
+ #              http://qgroundcontrol.org/mavlink/waypoint_protocol
+ # Params:  data: List of Waypoints to be transmitted
+#*******************************************************************************
+def waypoint_list_cb(data):
+    rospy.loginfo ("Sending Waypoint list")
+
+    sizeOfWaypointList = len(data.waypoints)
+
+    # Number of waypoints (Plus Dummy Waypoint)
+    master.mav.mission_count_send(master.target_system, master.target_component, sizeOfWaypointList + 1)
+
+    # Send Dummy Waypoint
+    dummy_wp = roscopter.msg.Waypoint()
+    dummy_wp.latitude = gps_msg.latitude
+    dummy_wp.longitude = gps_msg.longitude
+    
+    transmit_waypoint(dummy_wp, 0, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT)
+        
+    # Send entire list of waypoints
+    rospy.loginfo("*************************************************************")
+    for i in range(0, sizeOfWaypointList):
+        transmit_waypoint(data.waypoints[i], i+1, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT)
+
+    rospy.loginfo("*************************************************************")
+
+    # Set Current Waypoint
+    set_current_waypoint(1)
+
+    rospy.loginfo("Waypoints Sent")
+
+
+##******************************************************************************
+ # Name:    receive_waypoint
+ # Purpose: Request information on specific waypoint designated 
+ # Params:  num: Value of desired waypoint to be received
+#*******************************************************************************
 def receive_waypoint(num):
     master.mav.mission_request_send(master.target_system, master.target_component, num)
-    print ("Receive waypoint")
-    
+    rospy.loginfo ("Receive waypoint")
 
+    
+##******************************************************************************
+ # Name:    clear_waypoints
+ # Purpose: Clear all stored waypoints from the APM
+#*******************************************************************************
 def clear_waypoints():
     master.mav.mission_clear_all_send(master.target_system, master.target_component)
-    print ("Clear Waypoints")
+    rospy.loginfo ("Clear Waypoints")
 
-def set_current_waypoint():
-    master.mav.mission_set_current_send(master.target_system, master.target_component, 1)
-    print ("Set current waypoint")
 
+##******************************************************************************
+ # Name:    set_current_waypoint
+ # Purpose: Set current waypoint of APM according to params
+ # Params:  num: Value of Current Waypoint
+#*******************************************************************************
+def set_current_waypoint(num):
+    master.mav.mission_set_current_send(master.target_system, master.target_component, num)
+    rospy.loginfo ("Set current waypoint to " + str(num))
+
+
+##******************************************************************************
+ # Name:    num_of_waypoints
+ # Purpose: Request the number of waypoints held on APM.  Will be received
+ #              through Mavlink "MISSION_COUNT" message
+#*******************************************************************************
 def num_of_waypoints():
     val = master.mav.mission_request_list_send(master.target_system, master.target_component)
-    print ("Num of Waypoints")
+
     
 # START MISSION
 def goto_waypoint():
@@ -230,39 +328,40 @@ def goto_waypoint():
                                  0, 0, 0,
                                  0, 0, 0)
     
-# Launch the vehicle
+##******************************************************************************
+ # Name:    launch
+ # Purpose: Send Launch Waypoint.  To trigger Launch, vehicle is set into Auto
+ #              mode and then the throttle RC value is slightly increased. 
+ #              Immediately after the throttle change, it is given back to the
+ #              APM Control.
+#*******************************************************************************
 def launch():
+    rospy.loginfo("Launch Vehicle")
     
+    # Number of waypoints (Plus Dummy Waypoint)
     master.mav.mission_count_send(master.target_system, master.target_component, 2)
 
-    # Dummy Waypoint
-    master.mav.mission_item_send(master.target_system, master.target_component, 
-                                 0, 0, mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
-                                 0, 0, 0,
-                                 0, 0, 0, 
-                                 0, 0, 0)
+    # Send Dummy Waypoint
+    dummy_wp = roscopter.msg.Waypoint()
+    dummy_wp.latitude = gps_msg.latitude
+    dummy_wp.longitude = gps_msg.longitude
     
-    rospy.sleep(1)
+    transmit_waypoint(dummy_wp, 0, mavutil.mavlink.MAV_CMD_NAV_TAKEOFF)
+    
+    # Send Dummy Waypoint
+    dummy_wp = roscopter.msg.Waypoint()
+    dummy_wp.latitude = gps_msg.latitude
+    dummy_wp.longitude = gps_msg.longitude
+    
 
-    # Launch Waypoint
-    master.mav.mission_item_send(master.target_system, master.target_component, 
-                                 1,     # Waypoint Number
-                                 0, mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
-                                 1,     # Is Current Waypoint
-                                 0,     # Should Autocontinue to next wp
-                                 0,     # NAV Command: Radius for accept within range (meters)
-                                 0,     # NAV Command: Hold Time (ms)
-                                 0,     # LOITER Command: Orbit to circle (meters).  Positive clockwise, Negative counter-clockwise
-                                 270,     # NAV/LOITER Command: Yaw Orientation [o to 360 degrees]
-                                 0,     # local: x position, global: latitude
-                                 0,     # local: y position, global: longitude
-                                 10)    # local: z position, global: altitude   (meters)
+    launch_wp = roscopter.msg.Waypoint()
+    launch_wp.latitude = gps_msg.latitude
+    launch_wp.longitude = gps_msg.longitude
+    launch_wp.altitude = opts.default_launch_altitude
+    transmit_waypoint(launch_wp, 1, mavutil.mavlink.MAV_CMD_NAV_TAKEOFF)
 
-    rospy.sleep(1)
     # Set Launch Waypoint as Current Waypoint
-    set_current_waypoint()
-    rospy.sleep(1)
-    receive_waypoint(1)
+    set_current_waypoint(1)
     
     # Trigger auto mode for launch command
     master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, AUTO)
@@ -275,7 +374,7 @@ def launch():
     rospy.sleep(1)
     master.mav.rc_channels_override_send(master.target_system, master.target_component, 0, 0, 0, 0, 0, 0, 0, 0)
 
-    print ("Launch Command")
+    rospy.loginfo ("Vehicle Launched")
     
 # Land the vehicle
 def land():
@@ -287,74 +386,14 @@ def land():
                                  mavutil.mavlink.MAV_CMD_NAV_LAND, 0, 0,
                                  0, 0, 0,
                                  0, 0, 0)
-    print ("Land Command")
-
-# Test Mission
-def send_test_mission():
-    # Number of waypoints (Plus Dummy Waypoint)
-    master.mav.mission_count_send(master.target_system, master.target_component, 5)
-    
-    # Dummy Waypoint
-    master.mav.mission_item_send(master.target_system, master.target_component, 
-                                 0,     # Waypoint Number
-                                 0, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
-                                 0,     # Is Current Waypoint
-                                 0,     # Should Autocontinue to next wp
-                                 0,     # NAV Command: Radius for accept within range (meters)
-                                 0,     # NAV Command: Hold Time (ms)
-                                 0,     # LOITER Command: Orbit to circle (meters).  Positive clockwise, Negative counter-clockwise
-                                 0,     # NAV/LOITER Command: Yaw Orientation [o to 360 degrees]
-                                 29.662180,  # local: x position, global: latitude
-                                 -82.377823, # local: y position, global: longitude
-                                 0)          # local: z position, global: altitude
-    rospy.sleep(1)
-
-    # Waypoint 1
-    master.mav.mission_item_send(master.target_system, master.target_component, 
-                                 1,     # Waypoint Number
-                                 0, mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
-                                 1,     # Is Current Waypoint
-                                 0,     # Should Autocontinue to next wp
-                                 0,     # NAV Command: Radius for accept within range (meters)
-                                 0,     # NAV Command: Hold Time (ms)
-                                 0,     # LOITER Command: Orbit to circle (meters).  Positive clockwise, Negative counter-clockwise
-                                 0,     # NAV/LOITER Command: Yaw Orientation [o to 360 degrees]
-                                 0,     # local: x position, global: latitude
-                                 0,     # local: y position, global: longitude
-                                 45)    # local: z position, global: altitude
-
-    rospy.sleep(1)
-
-    # Waypoint 2
-    master.mav.mission_item_send(master.target_system, master.target_component, 
-                                 2, 0, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
-                                 0, 1, 100,
-                                 10, 43, 23, 
-                                 20, -72, 25)
-    rospy.sleep(1)
-    master.mav.mission_item_send(master.target_system, master.target_component, 
-                                 3, 0, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
-                                 0, 0, 1,
-                                 2, 3, 4, 
-                                 29.100, -82.005, 50)
-    rospy.sleep(1)
-    master.mav.mission_item_send(master.target_system, master.target_component, 
-                                 4, 0, mavutil.mavlink.MAV_CMD_NAV_LAND,
-                                 0, 0, 0,
-                                 0, 0, 0,
-                                 0, 0, 0)
-    rospy.sleep(1)
-    set_current_waypoint()
-
-    num_of_waypoints()
-    receive_waypoint(0)
-    receive_waypoint(1)
-    receive_waypoint(2)
-    receive_waypoint(3)
-    receive_waypoint(4)
-    print ("Send Test Mission")
+    rospy.loginfo ("Land Command")
 
 
+##******************************************************************************
+# Publisher and Subscribers to be used for ROS communications of sensor or 
+#     Mavlink responses
+#*******************************************************************************
+# Sensor messages
 pub_gps = rospy.Publisher('gps', NavSatFix)
 #pub_imu = rospy.Publisher('imu', Imu)
 pub_rc = rospy.Publisher('rc', roscopter.msg.RC)
@@ -368,20 +407,37 @@ pub_control_output = rospy.Publisher('controller_output', roscopter.msg.Controll
 pub_current_mission = rospy.Publisher('current_mission', roscopter.msg.CurrentMission)
 pub_mission_item = rospy.Publisher('mission_item', roscopter.msg.MissionItem)
 
+# Allow For RC Control
 if opts.enable_rc_control:
-    #rospy.Subscriber("control", roscopter.msg.Control , mav_control)
-    rospy.Subscriber("send_rc", roscopter.msg.RC , send_rc)
+    rospy.Subscriber("send_rc", roscopter.msg.RC , send_rc_cb)
 
+# Allow for Waypoint Control
 if opts.enable_waypoint_control:
-    rospy.Service("command", roscopter.srv.APMCommand, command_callback)
-    rospy.Subscriber("waypoint", roscopter.msg.Waypoint , send_waypoint)
+    rospy.Subscriber("waypoint", roscopter.msg.Waypoint , waypoint_cb)
+    rospy.Subscriber("waypoint_list", roscopter.msg.WaypointList, waypoint_list_cb)
 
-#state
+##******************************************************************************
+# Services for APM Commands
+#*******************************************************************************
+# Allow for commands such as Arm, Disarm, Launch, Land, etc.
+rospy.Service("command", roscopter.srv.APMCommand, command_cb)
+
+
+##******************************************************************************
+# Global Message containers
+#*******************************************************************************
 gps_msg = NavSatFix()
-
 current_mission_msg = roscopter.msg.CurrentMission()
 
-
+##******************************************************************************
+ # Name:    mainloop
+ # Purpose: Main loop to initialize ROS node and parse data read from the
+ #              Mavlink master.
+ # Globals: Publishers and Subscribers
+ #          mission_request_buffer: buffer to hold list of requests for desired
+ #              mission_item to be sent
+#*******************************************************************************
+mission_request_buffer = []
 def mainloop():
     global gps_msg
     rospy.init_node('roscopter')
@@ -390,7 +446,8 @@ def mainloop():
         msg = master.recv_match(blocking=False)
         if not msg:
             continue
-        #print msg.get_type()
+
+        # Parse incoming message
         if msg.get_type() == "BAD_DATA":
             if mavutil.all_printable(msg.data):
                 sys.stdout.write(msg.data)
@@ -415,8 +472,8 @@ def mainloop():
                 header.frame_id = 'base_link'# '/gps'
                 header.stamp = rospy.Time.now()
 
-                #print("Hdop is %d", msg.eph)
-                #print("Vdop is %d", msg.epv)
+                #rospy.loginfo("Hdop is %d", msg.eph)
+                #rospy.loginfo("Vdop is %d", msg.epv)
 
                 sigma = math.sqrt((3.04 * msg.eph**2)**2 + 3.57**2)
                 position_covariance = [0] * 9
@@ -438,7 +495,7 @@ def mainloop():
 
 
             elif msg_type == "LOCAL_POSITION_NED" :
-                print "Local Pos: (%f %f %f) , (%f %f %f)" %(msg.x, msg.y, msg.z, msg.vx, msg.vy, msg.vz)
+                rospy.loginfo("Local Pos: (%f %f %f) , (%f %f %f)" %(msg.x, msg.y, msg.z, msg.vx, msg.vy, msg.vz))
 
             elif msg_type == "RAW_IMU" :
                 pub_raw_imu.publish (Header(), msg.time_usec, 
@@ -471,9 +528,6 @@ def mainloop():
                 pub_control_output.publish(msg.nav_roll, msg.nav_pitch,
                                            msg.nav_bearing, msg.alt_error,
                                            msg.aspd_error, msg.xtrack_error)
-                                           
-                #clear_waypoints()
-                #num_of_waypoints()
 
             elif msg_type == "MISSION_CURRENT":
                 current_mission_msg.header.stamp = rospy.Time.now()
@@ -486,53 +540,58 @@ def mainloop():
                 header.stamp = rospy.Time.now()
                 
                 pub_mission_item.publish(header, msg.seq, msg.current,
-                                         msg.autocontinue, msg.param2,
-                                         msg.param1, msg.param3, msg.param4,
+                                         msg.autocontinue, msg.param1,
+                                         msg.param2, msg.param3, msg.param4,
                                          msg.x, msg.y, msg.z)
 
-
             elif msg_type == "MISSION_COUNT":
-                print ("MISSION_COUNT: Number of Mission Items - " + str(msg.count))
+                rospy.loginfo ("MISSION_COUNT: Number of Mission Items - " + str(msg.count))
             
             
             elif msg_type == "MISSION_ACK":
-                print ("MISSION_ACK: Mission Message ACK with response - " + str(msg.type))
+                rospy.loginfo ("MISSION_ACK: Mission Message ACK with response - " + str(msg.type))
                 
             
             elif msg_type == "COMMAND_ACK":
-                print ("COMMAND_ACK: Command Message ACK with result - " + str(msg.result))
+                rospy.loginfo ("COMMAND_ACK: Command Message ACK with result - " + str(msg.result))
                 
                 
             elif msg_type == "MISSION_REQUEST":
-                print ("MISSION_REQUEST: Mission Request for target system %d for target component %d with result %d"
+                rospy.loginfo ("MISSION_REQUEST: Mission Request for target system %d for target component %d with result %d"
                          %(msg.target_system, msg.target_component, msg.seq))
-                
-                
+                mission_request_buffer.append(msg.seq)
+
             elif msg_type == "STATUSTEXT":
-                print ("STATUSTEXT: Status severity is %d. Text Message is %s" %(msg.severity, msg.text)) 
-                
+                rospy.loginfo ("STATUSTEXT: Status severity is %d. Text Message is %s" %(msg.severity, msg.text)) 
 
             #else:
             #    # Message not being processed received
-            #    print msg_type
+            #    rospy.loginfo( msg_type)
 
+
+
+
+##******************************************************************************
+ # Name:    wait_heartbeat
+ # Purpose: Function to wait for the heartbeat from the APM
+ # Params:  m: mavlink master
+#*******************************************************************************
+def wait_heartbeat(m):
+    '''wait for a heartbeat so we know the target system IDs'''
+    print("Waiting for APM heartbeat")
+    m.wait_heartbeat()
+    print("Heartbeat from APM (system %u component %u)" % (m.target_system, m.target_system))
 
 # wait for the heartbeat msg to find the system ID
 wait_heartbeat(master)
-
 
 # waiting for 10 seconds for the system to be ready
 print("Sleeping for 10 seconds to allow system, to be ready")
 rospy.sleep(10)
 print("Sending all stream request for rate %u" % opts.rate)
-#for i in range(0, 3):
 
 master.mav.request_data_stream_send(master.target_system, master.target_component,
                                     mavutil.mavlink.MAV_DATA_STREAM_ALL, opts.rate, 1)
-#master.arducopter_arm()
-
-
-#master.mav.set_mode_send(master.target_system, 
 if __name__ == '__main__':
     try:
         # initially clear waypoints and start mainloop
