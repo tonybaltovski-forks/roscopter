@@ -232,10 +232,15 @@ def transmit_waypoint(data, index, wp_type):
 #*******************************************************************************
 def waypoint_cb(data):
     rospy.loginfo ("Sending Single Waypoint")
+
+    # Send desired wp radius according to waypoint, divide by 10 to put in cm
+    master.mav.param_set_send(master.target_system, master.target_component, "WPNAV_RADIUS",
+        data.posAcc/10, mavutil.mavlink.MAV_PARAM_TYPE_REAL32)    
+
     # Number of waypoints (Plus Dummy Waypoint)
     master.mav.mission_count_send(master.target_system, master.target_component, 2)
-    
-        # Send Dummy Waypoint
+
+    # Send Dummy Waypoint
     dummy_wp = roscopter.msg.Waypoint()
     dummy_wp.latitude = gps_msg.latitude
     dummy_wp.longitude = gps_msg.longitude
@@ -260,9 +265,17 @@ def waypoint_cb(data):
 def waypoint_list_cb(data):
     rospy.loginfo ("Sending Waypoint list")
 
-    sizeOfWaypointList = len(data.waypoints)
+    # Send desired wp radius according to first waypoint of list, divide by 10 to put in cm
+    master.mav.param_set_send(master.target_system, master.target_component, "WPNAV_RADIUS",
+        data.waypoints[0].posAcc/10, mavutil.mavlink.MAV_PARAM_TYPE_REAL32)
+
+    # If it is desired to store
+#    rospy.sleep(1)
+#    master.mav.command_long_send(master.target_system, master.target_component,
+#                                 mavutil.mavlink.MAV_CMD_PREFLIGHT_STORAGE, 0, 0, 0, 0, 0, 0, 0, 0)
 
     # Number of waypoints (Plus Dummy Waypoint)
+    sizeOfWaypointList = len(data.waypoints)
     master.mav.mission_count_send(master.target_system, master.target_component, sizeOfWaypointList + 1)
 
     # Send Dummy Waypoint
@@ -444,6 +457,9 @@ def mainloop():
     global gps_msg
     rospy.init_node('roscopter')
 
+    # SEND IF YOU DESIRE A LIST OF ALL PARAMS (TODO: Publish params to a topic)
+    #master.mav.param_request_list_send(master.target_system, master.target_component)
+
     r = rospy.Rate(opts.rate)
     while not rospy.is_shutdown():
         r.sleep()
@@ -493,10 +509,9 @@ def mainloop():
                                           position_covariance_type=NavSatFix.COVARIANCE_TYPE_APPROXIMATED,
                                           status = NavSatStatus(status=fix, service = NavSatStatus.SERVICE_GPS) 
                                           ))
-            #pub.publish(String("MSG: %s"%msg))
+
             elif msg_type == "ATTITUDE" :
                 pub_attitude.publish(msg.roll, msg.pitch, msg.yaw, msg.rollspeed, msg.pitchspeed, msg.yawspeed)
-
 
             elif msg_type == "LOCAL_POSITION_NED" :
                 rospy.loginfo("Local Pos: (%f %f %f) , (%f %f %f)" %(msg.x, msg.y, msg.z, msg.vx, msg.vy, msg.vz))
@@ -567,6 +582,10 @@ def mainloop():
 
             elif msg_type == "STATUSTEXT":
                 rospy.loginfo ("STATUSTEXT: Status severity is %d. Text Message is %s" %(msg.severity, msg.text)) 
+
+            elif msg_type == "PARAM_VALUE":
+                rospy.loginfo ("PARAM_VALUE: ID = %s, Value = %d, Type = %d, Count = %d, Index = %d"
+                    %(msg.param_id, msg.param_value, msg.param_type, msg.param_count, msg.param_index))
 
             #else:
             #    # Message not being processed received
