@@ -32,15 +32,24 @@ parser = OptionParser("roscopter.py [options]")
 
 parser.add_option("--baudrate", dest="baudrate", type='int',
                   help="master port baud rate", default=115200)
-parser.add_option("--device", dest="device", default="/dev/ttyACM0", help="serial device")
-parser.add_option("--rate", dest="rate", default=1000, type='int', help="parsing rate for roscopter")
-parser.add_option("--mavlink_rate", dest="mavlink_rate", default=10, type='int', help="requested stream rate")
+parser.add_option("--device", dest="device", default="/dev/ttyACM0",
+                  help="serial device")
+parser.add_option("--rate", dest="rate", default=1000, type='int',
+                  help="parsing rate for roscopter")
+parser.add_option("--mavlink-rate", dest="mavlink_rate", default=10,
+                  type='int', help="requested stream rate")
 parser.add_option("--source-system", dest='SOURCE_SYSTEM', type='int',
                   default=255, help='MAVLink source system for this GCS')
-parser.add_option("--enable-rc-control",dest="enable_rc_control", default=False, help="enable listening to control messages")
-parser.add_option("--enable-waypoint-control",dest="enable_waypoint_control", default=True, help="enable listening to waypoint messages")
-parser.add_option("--vehicle-name", dest="vehicle_name", default="", help="name of vehicle")
-parser.add_option("--default-launch-altitude",dest="default_launch_altitude", default=5, help="default launch altitude in meters")
+parser.add_option("--enable-rc-control",dest="enable_rc_control", default=False,
+                  help="enable listening to control messages")
+parser.add_option("--enable-waypoint-control",dest="enable_waypoint_control",
+                  default=True, help="enable listening to waypoint messages")
+parser.add_option("--vehicle-name", dest="vehicle_name", default="",
+                  help="name of vehicle")
+parser.add_option("--launch-altitude",dest="launch_altitude", default=0, 
+                  type='int', help="default launch altitude in meters")
+parser.add_option("--waypoint-timeout", dest="waypoint_timeout", default=500,
+                  type='int', help="Waypoint transmission timeout in nanoseconds")
 
 (opts, args) = parser.parse_args()
 
@@ -153,8 +162,8 @@ def command_cb(req):
 
     elif req.command == roscopter.srv._APMCommand.APMCommandRequest.CMD_SET_ALT_HOLD:
         rospy.loginfo ("SET MODE TO ALT HOLD")
-#        set_current_waypoint(3)
-        master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, ALT_HOLD)
+        set_current_waypoint(10)
+        #master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, ALT_HOLD)
         return True
 
     elif req.command == roscopter.srv._APMCommand.APMCommandRequest.CMD_SET_AUTO:
@@ -200,8 +209,15 @@ def command_cb(req):
  #              https://pixhawk.ethz.ch/mavlink/
 #*******************************************************************************
 def transmit_waypoint(data, index, wp_type):
+    start_time = rospy.Time.from_sec(time.time()).to_nsec()
+
+    # Loop until waypoint item request is received
     while (index not in mission_request_buffer):
-        pass
+        # If waypoint timeout is reached, waypoint transmission has failed
+        if ((start_time + opts.waypoint_timeout) > rospy.Time.from_sec(time.time()).to_nsec()):
+            return False
+
+        rospy.sleep(0.01)
 
     # Dummy Waypoint
     master.mav.mission_item_send(master.target_system, master.target_component, 
@@ -223,6 +239,9 @@ def transmit_waypoint(data, index, wp_type):
         %(index, data.latitude, data.longitude, data.altitude,
           data.posAcc, data.holdTime, data.yawFrom))
 
+    return True
+
+
 ##******************************************************************************
  # Name:    waypoint_cb
  # Purpose: Callback function for "waypoint".  Initially transmit dummy point
@@ -233,10 +252,6 @@ def transmit_waypoint(data, index, wp_type):
 def waypoint_cb(data):
     rospy.loginfo ("Sending Single Waypoint")
 
-    # Send desired wp radius according to waypoint, divide by 10 to put in cm
-    master.mav.param_set_send(master.target_system, master.target_component, "WPNAV_RADIUS",
-        data.posAcc/10, mavutil.mavlink.MAV_PARAM_TYPE_REAL32)    
-
     # Number of waypoints (Plus Dummy Waypoint)
     master.mav.mission_count_send(master.target_system, master.target_component, 2)
 
@@ -245,14 +260,32 @@ def waypoint_cb(data):
     dummy_wp.latitude = gps_msg.latitude
     dummy_wp.longitude = gps_msg.longitude
     
-    transmit_waypoint(dummy_wp, 0, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT)
-        
+    # Transmit waypoint, confirm transmission
+    if (not transmit_waypoint(dummy_wp, 0, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT)):
+        rospy.loginfo("Waypoint Transmission Failed")
+
+        return
+
     # Send waypoint
-    transmit_waypoint(data, 1, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT)
+    if (not transmit_waypoint(data, 1, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT)):
+        rospy.loginfo("Waypoint Transmission Failed")
+
+        return
 
     # Set current waypoint to be waypoint 1
     set_current_waypoint(1)
+
+    # Send desired wp radius according to first waypoint of list
+    # Send for ArduCopter, divide by 10 to put in cm
+    master.mav.param_set_send(master.target_system, master.target_component, "WPNAV_RADIUS",
+        data.posAcc/10, mavutil.mavlink.MAV_PARAM_TYPE_REAL32)
+
+    # Send for ArduRover, divide by 1000 to put in meters
+    master.mav.param_set_send(master.target_system, master.target_component, "WP_RADIUS",
+        data.posAcc/1000, mavutil.mavlink.MAV_PARAM_TYPE_REAL32) 
+
     rospy.loginfo ("Waypoint Sent")
+
 
 ##******************************************************************************
  # Name:    waypoint_list_cb
@@ -260,22 +293,20 @@ def waypoint_cb(data):
  #              point and then take list of waypoints from waypoint list and
  #              transmit.  Method follows: 
  #              http://qgroundcontrol.org/mavlink/waypoint_protocol
- # Params:  data: List of Waypoints to be transmitted
+ # Params:  req: List of Waypoints to be transmitted
 #*******************************************************************************
-def waypoint_list_cb(data):
+def waypoint_list_cb(req):
     rospy.loginfo ("Sending Waypoint list")
-
-    # Send desired wp radius according to first waypoint of list, divide by 10 to put in cm
-    master.mav.param_set_send(master.target_system, master.target_component, "WPNAV_RADIUS",
-        data.waypoints[0].posAcc/10, mavutil.mavlink.MAV_PARAM_TYPE_REAL32)
 
     # If it is desired to store
 #    rospy.sleep(1)
 #    master.mav.command_long_send(master.target_system, master.target_component,
 #                                 mavutil.mavlink.MAV_CMD_PREFLIGHT_STORAGE, 0, 0, 0, 0, 0, 0, 0, 0)
 
+    # Setup Timer for waypoint delay
+
     # Number of waypoints (Plus Dummy Waypoint)
-    sizeOfWaypointList = len(data.waypoints)
+    sizeOfWaypointList = len(req.waypoints)
     master.mav.mission_count_send(master.target_system, master.target_component, sizeOfWaypointList + 1)
 
     # Send Dummy Waypoint
@@ -283,19 +314,34 @@ def waypoint_list_cb(data):
     dummy_wp.latitude = gps_msg.latitude
     dummy_wp.longitude = gps_msg.longitude
     
-    transmit_waypoint(dummy_wp, 0, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT)
+    if (not transmit_waypoint(dummy_wp, 0, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT)):
+        rospy.loginfo("Waypoint List Transmission Failed")
+        return False
         
     # Send entire list of waypoints
-    rospy.loginfo("*************************************************************")
+    rospy.loginfo("***************************************************")
     for i in range(0, sizeOfWaypointList):
-        transmit_waypoint(data.waypoints[i], i+1, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT)
-
-    rospy.loginfo("*************************************************************")
+        if (not transmit_waypoint(req.waypoints[i], i+1, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT)):
+            rospy.loginfo("Waypoint List Transmission Failed")
+            return False
+    rospy.loginfo("***************************************************")
 
     # Set Current Waypoint
     set_current_waypoint(1)
 
+    # Send desired wp radius according to first waypoint of list
+    # Send for ArduCopter, divide by 10 to put in cm
+    master.mav.param_set_send(master.target_system, master.target_component, "WPNAV_RADIUS",
+        req.waypoints[0].posAcc/10, mavutil.mavlink.MAV_PARAM_TYPE_REAL32)
+
+    # Send for ArduRover, divide by 1000 to put in meters
+    master.mav.param_set_send(master.target_system, master.target_component, "WP_RADIUS",
+        req.waypoints[0].posAcc/1000, mavutil.mavlink.MAV_PARAM_TYPE_REAL32)
+
+
     rospy.loginfo("Waypoints Sent")
+
+    return True
 
 
 ##******************************************************************************
@@ -354,7 +400,7 @@ def launch():
     rospy.loginfo("Launch Vehicle")
     
     # Number of waypoints (Plus Dummy Waypoint)
-    master.mav.mission_count_send(master.target_system, master.target_component, 2)
+    master.mav.mission_count_send(master.target_system, master.target_component, 3)
 
     # Send Dummy Waypoint
     dummy_wp = roscopter.msg.Waypoint()
@@ -372,7 +418,7 @@ def launch():
     launch_wp = roscopter.msg.Waypoint()
     launch_wp.latitude = gps_msg.latitude
     launch_wp.longitude = gps_msg.longitude
-    launch_wp.altitude = opts.default_launch_altitude
+    launch_wp.altitude = opts.launch_altitude
     transmit_waypoint(launch_wp, 1, mavutil.mavlink.MAV_CMD_NAV_TAKEOFF)
 
     # Set Launch Waypoint as Current Waypoint
@@ -384,6 +430,7 @@ def launch():
     master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, AUTO)
     
     rospy.sleep(10)
+
     # Slightly adjust throttle to trigger auto mode.
     master.mav.rc_channels_override_send(master.target_system, master.target_component, 65535, 65535, 1200, 65535, 65535, 65535, 65535, 65535)
     rospy.sleep(1)
@@ -422,6 +469,15 @@ pub_control_output = rospy.Publisher('controller_output', roscopter.msg.Controll
 pub_current_mission = rospy.Publisher('current_mission', roscopter.msg.CurrentMission)
 pub_mission_item = rospy.Publisher('mission_item', roscopter.msg.MissionItem)
 
+##******************************************************************************
+# Services for APM Commands
+#*******************************************************************************
+# Allow for commands such as Arm, Disarm, Launch, Land, etc.
+rospy.Service("command", roscopter.srv.APMCommand, command_cb)
+
+##******************************************************************************
+# Optional Controls
+#*******************************************************************************
 # Allow For RC Control
 if opts.enable_rc_control:
     rospy.Subscriber("send_rc", roscopter.msg.RC , send_rc_cb)
@@ -430,13 +486,6 @@ if opts.enable_rc_control:
 if opts.enable_waypoint_control:
     rospy.Subscriber("waypoint", roscopter.msg.Waypoint , waypoint_cb)
     rospy.Subscriber("waypoint_list", roscopter.msg.WaypointList, waypoint_list_cb)
-
-##******************************************************************************
-# Services for APM Commands
-#*******************************************************************************
-# Allow for commands such as Arm, Disarm, Launch, Land, etc.
-rospy.Service("command", roscopter.srv.APMCommand, command_cb)
-
 
 ##******************************************************************************
 # Global Message containers
@@ -509,6 +558,9 @@ def mainloop():
                                           position_covariance_type=NavSatFix.COVARIANCE_TYPE_APPROXIMATED,
                                           status = NavSatStatus(status=fix, service = NavSatStatus.SERVICE_GPS) 
                                           ))
+
+                gps_msg.latitude = msg.lat
+                gps_msg.longitude = msg.lon
 
             elif msg_type == "ATTITUDE" :
                 pub_attitude.publish(msg.roll, msg.pitch, msg.yaw, msg.rollspeed, msg.pitchspeed, msg.yawspeed)
