@@ -62,6 +62,15 @@ if (opts.type == "ArduCopter"):
     POSITION = 8                      # AUTO control
     LAND = 9                          # AUTO control
     OF_LOITER = 10                    # Hold a single location using optical flow
+elif (opts.type == "ArduRover"):
+    MANUAL = 0
+    LEARNING = 2
+    STEERING = 3
+    HOLD = 4
+    AUTO = 10
+    RTL = 11
+    GUIDED = 15
+    INITIALISING = 16
 else:
     print("APM Type not configured correctly")
     exit()
@@ -199,6 +208,22 @@ def command_cb(req):
 
         return True
         
+    elif req.command == roscopter.srv._APMCommand.APMCommandRequest.CMD_SET_HOLD:
+        rospy.loginfo ("SET MODE TO HOLD")
+        master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, HOLD)
+
+        # Loop until mode is set or timeout
+        start_time = rospy.Time.from_sec(time.time()).to_nsec()
+
+        while (not state_msg.mode == "HOLD"):
+            if (not (start_time + opts.mode_timeout*1000000) > rospy.Time.from_sec(time.time()).to_nsec()):
+                rospy.loginfo("Timed out while setting HOLD")
+                return False
+
+            rospy.sleep(0.01)
+
+        return True
+
     elif req.command == roscopter.srv._APMCommand.APMCommandRequest.CMD_SET_STABILIZE:
         rospy.loginfo ("SET MODE TO STABILIZE")
         master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, STABILIZE)
@@ -234,9 +259,11 @@ def command_cb(req):
 
     elif req.command == roscopter.srv._APMCommand.APMCommandRequest.CMD_SET_AUTO:
         rospy.loginfo ("SET MODE TO AUTO")
+        print("Value is " + str(AUTO))
+
         master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, AUTO)
-        rospy.sleep(0.1)
-        master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, AUTO)
+#        rospy.sleep(0.1)
+#        master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, LEARNING)
 
         # Loop until mode is set or timeout
         start_time = rospy.Time.from_sec(time.time()).to_nsec()
@@ -310,7 +337,8 @@ def transmit_waypoint(data, index):
     # Loop until waypoint item request is received
     while (index not in mission_request_buffer):
         # If waypoint timeout is reached, waypoint transmission has failed
-        if (not (start_time + (opts.waypoint_timeout*100000)) > rospy.Time.from_sec(time.time()).to_nsec()):
+        if (not (start_time + (opts.waypoint_timeout*1000000)) > rospy.Time.from_sec(time.time()).to_nsec()):
+            rospy.loginfo("Waypoint Timeout")
             return False
 
         rospy.sleep(0.01)
