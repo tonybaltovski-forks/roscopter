@@ -9,27 +9,14 @@ import sys,struct,time,os
 import math
 
 ##******************************************************************************
-# Auto Pilot defines for use throughout the code.  These are custom modes
-# defined in teh Arducopter Code under the defines.h file
-#*******************************************************************************
-STABILIZE = 0                     # hold level position
-ACRO = 1                          # rate control
-ALT_HOLD = 2                      # AUTO control
-AUTO = 3                          # AUTO control
-GUIDED = 4                        # AUTO control
-LOITER = 5                        # Hold a single location
-RTL = 6                           # AUTO control
-CIRCLE = 7                        # AUTO control
-POSITION = 8                      # AUTO control
-LAND = 9                          # AUTO control
-OF_LOITER = 10                    # Hold a single location using optical flow
-
-##******************************************************************************
 # Parse any arguments that follow the node command
 #*******************************************************************************
 from optparse import OptionParser
 parser = OptionParser("roscopter.py [options]")
 
+
+parser.add_option("--type", dest="type", 
+                  help="ArduRover or ArduCopter", default="ArduCopter")
 parser.add_option("--baudrate", dest="baudrate", type='int',
                   help="master port baud rate", default=115200)
 parser.add_option("--device", dest="device", default="/dev/ttyACM0",
@@ -46,12 +33,38 @@ parser.add_option("--enable-waypoint-control",dest="enable_waypoint_control",
                   default=True, help="enable listening to waypoint messages")
 parser.add_option("--vehicle-name", dest="vehicle_name", default="",
                   help="name of vehicle")
-parser.add_option("--launch-altitude",dest="launch_altitude", default=0, 
-                  type='int', help="default launch altitude in meters")
+parser.add_option("--launch-altitude",dest="launch_altitude", default=0000, 
+                  type='int', help="default launch altitude in milli-meters")
 parser.add_option("--waypoint-timeout", dest="waypoint_timeout", default=500,
-                  type='int', help="Waypoint transmission timeout in nanoseconds")
+                  type='int', help="Waypoint transmission timeout in milli-seconds")
+parser.add_option("--arm-timeout", dest="arm_timeout", default=10000,
+                  type='int', help="Arming/Disarming timeout in milli-seconds")
+parser.add_option("--launch-timeout", dest="launch_timeout", default=30000,
+                  type='int', help="Launch timeout in milli-seconds")
+parser.add_option("--mode-timeout", dest="mode_timeout", default=10000,
+                  type='int', help="Mode timeout in milli-seconds")
 
 (opts, args) = parser.parse_args()
+
+##******************************************************************************
+# Auto Pilot defines for use throughout the code.  These are custom modes
+# defined in teh ArduCopter or ArduRover Code under the defines.h file
+#*******************************************************************************
+if (opts.type == "ArduCopter"):
+    STABILIZE = 0                     # hold level position
+    ACRO = 1                          # rate control
+    ALT_HOLD = 2                      # AUTO control
+    AUTO = 3                          # AUTO control
+    GUIDED = 4                        # AUTO control
+    LOITER = 5                        # Hold a single location
+    RTL = 6                           # AUTO control
+    CIRCLE = 7                        # AUTO control
+    POSITION = 8                      # AUTO control
+    LAND = 9                          # AUTO control
+    OF_LOITER = 10                    # Hold a single location using optical flow
+else:
+    print("APM Type not configured correctly")
+    exit()
 
 ##******************************************************************************
 # Import and connect to the apm through mavlink
@@ -112,58 +125,111 @@ def send_rc_cb(data):
 def command_cb(req):
     if req.command == roscopter.srv._APMCommand.APMCommandRequest.CMD_LAUNCH:
         rospy.loginfo ("Launch Command")
-        launch()
-        #goto_waypoint()
+        if (not launch()):
+            # Assume that if launch fails, we may still be in the air and should land
+            master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, LAND)
+            rospy.sleep(0.1)
+            master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, LAND)
+
+            return False
+
         return True
     elif req.command == roscopter.srv._APMCommand.APMCommandRequest.CMD_LAND:
         rospy.loginfo ("Land Command")
         land()
+
+        # Loop until mode is set or timeout
+        start_time = rospy.Time.from_sec(time.time()).to_nsec()
+
+        while (not state_msg.mode == "LAND"):
+            if (not (start_time + opts.mode_timeout*1000000) > rospy.Time.from_sec(time.time()).to_nsec()):
+                rospy.loginfo("Timed out while setting LAND")
+                return False
+
+            rospy.sleep(0.01)
+
         return True
+
     elif req.command == roscopter.srv._APMCommand.APMCommandRequest.CMD_ARM:
         rospy.loginfo ("ARMING")
-        master.arducopter_arm()        # One method commented out for the time
-        '''master.mav.command_long_send(master.target_system, mavutil.mavlink.MAV_COMP_ID_SYSTEM_CONTROL,
-                                 mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 
-                                 0, # confirmation
-                                 1, # param1 (1 to indicate arm)
-                                 0, # param2 (all other params meaningless)
-                                 0, # param3
-                                 0, # param4
-                                 0, # param5
-                                 0, # param6
-                                 0) # param7
-        '''
+
+        master.arducopter_arm()
+
+        # Loop until waypoint item request is received
+        start_time = rospy.Time.from_sec(time.time()).to_nsec()
+
+        while (not state_msg.armed):
+            # If waypoint timeout is reached, waypoint transmission has failed
+            if (not (start_time + opts.arm_timeout*1000000) > rospy.Time.from_sec(time.time()).to_nsec()):
+                rospy.loginfo("Timed out while arming")
+                return False
+
+            rospy.sleep(0.01)
         return True
+
     elif req.command == roscopter.srv._APMCommand.APMCommandRequest.CMD_DISARM:
         rospy.loginfo ("DISARMING")
         master.arducopter_disarm()
-        '''master.mav.command_long_send(master.target_system, master.target_component,
-                                 mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 
-                                 0, # confirmation
-                                 0, # param1 (1 to indicate dis arm)
-                                 0, # param2 (all other params meaningless)
-                                 0, # param3
-                                 0, # param4
-                                 0, # param5
-                                 0, # param6
-                                 0) # param7
-        '''
+
+        # Loop until armed or timeout
+        start_time = rospy.Time.from_sec(time.time()).to_nsec()
+
+        while (state_msg.armed):
+            if (not (start_time + opts.arm_timeout*1000000) > rospy.Time.from_sec(time.time()).to_nsec()):
+                rospy.loginfo("Timed out while disarming")
+                return False
+
+            rospy.sleep(0.01)
+
         return True
 
     elif req.command == roscopter.srv._APMCommand.APMCommandRequest.CMD_SET_MANUAL:
         rospy.loginfo ("SET MODE TO MANUAL")
         master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, MANUAL)
+
+        # Loop until mode is set or timeout
+        start_time = rospy.Time.from_sec(time.time()).to_nsec()
+
+        while (not state_msg.mode == "MANUAL"):
+            if (not (start_time + opts.mode_timeout*1000000) > rospy.Time.from_sec(time.time()).to_nsec()):
+                rospy.loginfo("Timed out while setting MANUAL")
+                return False
+
+            rospy.sleep(0.01)
+
         return True
         
     elif req.command == roscopter.srv._APMCommand.APMCommandRequest.CMD_SET_STABILIZE:
         rospy.loginfo ("SET MODE TO STABILIZE")
         master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, STABILIZE)
+
+        # Loop until mode is set or timeout
+        start_time = rospy.Time.from_sec(time.time()).to_nsec()
+
+        while (not state_msg.mode == "STABILIZE"):
+            if (not (start_time + opts.mode_timeout*1000000) > rospy.Time.from_sec(time.time()).to_nsec()):
+                rospy.loginfo("Timed out while setting STABILIZE")
+                return False
+
+            rospy.sleep(0.01)
+
         return True
 
     elif req.command == roscopter.srv._APMCommand.APMCommandRequest.CMD_SET_ALT_HOLD:
         rospy.loginfo ("SET MODE TO ALT HOLD")
         set_current_waypoint(10)
         #master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, ALT_HOLD)
+
+        # Loop until mode is set or timeout
+        start_time = rospy.Time.from_sec(time.time()).to_nsec()
+
+        while (not state_msg.mode == "ALT_HOLD"):
+            if (not (start_time + opts.mode_timeout*1000000) > rospy.Time.from_sec(time.time()).to_nsec()):
+                rospy.loginfo("Timed out while setting ALT_HOLD")
+                return False
+
+            rospy.sleep(0.01)
+
         return True
 
     elif req.command == roscopter.srv._APMCommand.APMCommandRequest.CMD_SET_AUTO:
@@ -171,16 +237,33 @@ def command_cb(req):
         master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, AUTO)
         rospy.sleep(0.1)
         master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, AUTO)
+
+        # Loop until mode is set or timeout
+        start_time = rospy.Time.from_sec(time.time()).to_nsec()
+
+        while (not state_msg.mode == "AUTO"):
+            if (not (start_time + opts.mode_timeout*1000000) > rospy.Time.from_sec(time.time()).to_nsec()):
+                rospy.loginfo("Timed out while setting AUTO")
+                return False
+
+            rospy.sleep(0.01)
+
         return True
 
     elif req.command == roscopter.srv._APMCommand.APMCommandRequest.CMD_SET_LOITER:
         rospy.loginfo ("SET MODE TO LOITER")
         master.set_mode_loiter()
-        #master.mav.command_long_send(master.target_system, master.target_component,
-        #                                 mavutil.mavlink.MAV_CMD_NAV_LOITER_UNLIM, 0, 0, 0, 0, 0, 0, 0, 0)
-        #master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, LOITER)
-        #rospy.sleep(0.1)
-        #master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, LOITER)
+
+        # Loop until mode is set or timeout
+        start_time = rospy.Time.from_sec(time.time()).to_nsec()
+
+        while (not state_msg.mode == "LOITER"):
+            if (not (start_time + opts.mode_timeout*1000000) > rospy.Time.from_sec(time.time()).to_nsec()):
+                rospy.loginfo("Timed out while setting LOITER")
+                return False
+
+            rospy.sleep(0.01)
+
         return 1
 
     elif req.command == roscopter.srv._APMCommand.APMCommandRequest.CMD_SET_LAND:
@@ -188,12 +271,25 @@ def command_cb(req):
         master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, LAND)
         rospy.sleep(0.1)
         master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, LAND)
+
+        # Loop until mode is set or timeout
+        start_time = rospy.Time.from_sec(time.time()).to_nsec()
+
+        while (not state_msg.mode == "LAND"):
+            if (not (start_time + opts.mode_timeout*1000000) > rospy.Time.from_sec(time.time()).to_nsec()):
+                rospy.loginfo("Timed out while setting LAND")
+                return False
+
+            rospy.sleep(0.01)
+
         return True
 
     elif req.command == roscopter.srv._APMCommand.APMCommandRequest.RETURN_RC_CONTROL:
         rospy.loginfo ("RETURN RC CONTROL")
         master.mav.rc_channels_override_send(master.target_system, master.target_component,0,0,0,0,0,0,0,0)
         return True
+
+    return False
 
 ##******************************************************************************
  # Name:    transmit_waypoint
@@ -208,36 +304,69 @@ def command_cb(req):
  #          wp_type: Type of waypoint item designated by Mavlink:
  #              https://pixhawk.ethz.ch/mavlink/
 #*******************************************************************************
-def transmit_waypoint(data, index, wp_type):
+def transmit_waypoint(data, index):
     start_time = rospy.Time.from_sec(time.time()).to_nsec()
 
     # Loop until waypoint item request is received
     while (index not in mission_request_buffer):
         # If waypoint timeout is reached, waypoint transmission has failed
-        if ((start_time + opts.waypoint_timeout) > rospy.Time.from_sec(time.time()).to_nsec()):
+        if (not (start_time + (opts.waypoint_timeout*100000)) > rospy.Time.from_sec(time.time()).to_nsec()):
             return False
 
         rospy.sleep(0.01)
 
-    # Dummy Waypoint
-    master.mav.mission_item_send(master.target_system, master.target_component, 
-                                 index,              # Waypoint Number
-                                 0, 
-                                 wp_type,            # Mission Item Type
-                                 0,                  # Is Current Waypoint
-                                 1,                  # Should Autocontinue to next wp
-                                 data.holdTime/1000,      # NAV Command: Hold Time (convert from ms to seconds)
-                                 data.posAcc/1000,   # NAV Command: Radius for accept within range (convert from mm to meters)
-                                 0,                  # LOITER Command: Orbit to circle (meters). Positive clockwise, Negative counter-clockwise
-                                 data.yawFrom/1000,  # NAV/LOITER Command: Yaw Orientation [o to 360 degrees]
-                                 data.latitude/1E7,  # local: x position, global: latitude
-                                 data.longitude/1E7, # local: y position, global: longitude
-                                 data.altitude/1000)  # local: z position, global: altitude (convert from mm to meters)
+    # Send the waypoint based on the type defined in the Waypoint.msg file
+    if (data.waypoint_type == roscopter.msg.Waypoint.TYPE_NAV):
+        master.mav.mission_item_send(master.target_system, master.target_component, 
+                                     index,              # Waypoint Number
+                                     0, 
+                                     mavutil.mavlink.MAV_CMD_NAV_WAYPOINT, # Mission Item Type
+                                     0,                  # Is Current Waypoint
+                                     1,                  # Should Autocontinue to next wp
+                                     data.hold_time/1000,# Hold Time (convert from ms to seconds)
+                                     0,                  # PosAcc Not used on APM
+                                     0,                  # Orbit Not used on APM
+                                     0,                  # Yaw Not used on APM
+                                     data.latitude/1E7,  # local: x position, global: latitude
+                                     data.longitude/1E7, # local: y position, global: longitude
+                                     data.altitude/1000) # local: z position, global: altitude (convert from mm to meters)
+    elif (data.waypoint_type == roscopter.msg.Waypoint.TYPE_TAKEOFF):
+        master.mav.mission_item_send(master.target_system, master.target_component, 
+                                     index,              # Waypoint Number
+                                     0, 
+                                     mavutil.mavlink.MAV_CMD_NAV_TAKEOFF, # Mission Item Type
+                                     0,                  # Is Current Waypoint
+                                     1,                  # Should Autocontinue to next wp
+                                     0,                  # Min pitch (if airspeed sensor present), desired pitch without sensor
+                                     0,                  # Empty
+                                     0,                  # Empty
+                                     0,                  # Yaw angle (if magnetometer present), ignored without magnetometer
+                                     data.latitude/1E7,  # latitude
+                                     data.longitude/1E7, # longitude
+                                     data.altitude/1000) # altitude
+    elif (data.waypoint_type == roscopter.msg.Waypoint.TYPE_CONDITION_YAW):
+        master.mav.mission_item_send(master.target_system, master.target_component, 
+                                     index,              # Waypoint Number
+                                     0, 
+                                     mavutil.mavlink.MAV_CMD_CONDITION_YAW, # Mission Item Type
+                                     0,                  # Is Current Waypoint
+                                     1,                  # Should Autocontinue to next wp
+                                     data.yaw_from/1000,  # Target angle:[0-360], 0 is north
+                                     0,                  # Speed During yaw change: [deg per second] (0 use default)
+                                     0,                  # Direction: negative: counter clockwise, positive: clockwise [-1,1] (currently not used)
+                                     0,                  # Relative offset or absolute angle: [1,0]
+                                     0,  # local: x position, global: latitude
+                                     0, # local: y position, global: longitude
+                                     0) # local: z position, global: altitude (convert from mm to meters)
+    else:
+        rospy.loginfo("Type of waypoint incorrect")
+        return False
+
     mission_request_buffer.pop(0)
 
-    rospy.loginfo ("Waypoint %d: Lat=%f, Lon=%f, Alt=%f, posAcc=%f, holdTime=%f, yawFrom=%f"
-        %(index, data.latitude, data.longitude, data.altitude,
-          data.posAcc, data.holdTime, data.yawFrom))
+#    rospy.loginfo ("Waypoint %d: Lat=%f, Lon=%f, Alt=%f, posAcc=%f, holdTime=%f, yawFrom=%f"
+#        %(index, data.latitude, data.longitude, data.altitude,
+#          data.posAcc, data.holdTime, data.yawFrom))
 
     return True
 
@@ -259,15 +388,16 @@ def waypoint_cb(data):
     dummy_wp = roscopter.msg.Waypoint()
     dummy_wp.latitude = gps_msg.latitude
     dummy_wp.longitude = gps_msg.longitude
+    dummy_wp.waypoint_type = roscopter.msg.Waypoint.TYPE_NAV
     
     # Transmit waypoint, confirm transmission
-    if (not transmit_waypoint(dummy_wp, 0, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT)):
+    if (not transmit_waypoint(dummy_wp, 0)):
         rospy.loginfo("Waypoint Transmission Failed")
 
         return
 
     # Send waypoint
-    if (not transmit_waypoint(data, 1, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT)):
+    if (not transmit_waypoint(data, 1)):
         rospy.loginfo("Waypoint Transmission Failed")
 
         return
@@ -298,13 +428,6 @@ def waypoint_cb(data):
 def waypoint_list_cb(req):
     rospy.loginfo ("Sending Waypoint list")
 
-    # If it is desired to store
-#    rospy.sleep(1)
-#    master.mav.command_long_send(master.target_system, master.target_component,
-#                                 mavutil.mavlink.MAV_CMD_PREFLIGHT_STORAGE, 0, 0, 0, 0, 0, 0, 0, 0)
-
-    # Setup Timer for waypoint delay
-
     # Number of waypoints (Plus Dummy Waypoint)
     sizeOfWaypointList = len(req.waypoints)
     master.mav.mission_count_send(master.target_system, master.target_component, sizeOfWaypointList + 1)
@@ -313,15 +436,16 @@ def waypoint_list_cb(req):
     dummy_wp = roscopter.msg.Waypoint()
     dummy_wp.latitude = gps_msg.latitude
     dummy_wp.longitude = gps_msg.longitude
+    dummy_wp.waypoint_type = roscopter.msg.Waypoint.TYPE_NAV
     
-    if (not transmit_waypoint(dummy_wp, 0, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT)):
+    if (not transmit_waypoint(dummy_wp, 0)):
         rospy.loginfo("Waypoint List Transmission Failed")
         return False
         
     # Send entire list of waypoints
     rospy.loginfo("***************************************************")
     for i in range(0, sizeOfWaypointList):
-        if (not transmit_waypoint(req.waypoints[i], i+1, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT)):
+        if (not transmit_waypoint(req.waypoints[i], i+1)):
             rospy.loginfo("Waypoint List Transmission Failed")
             return False
     rospy.loginfo("***************************************************")
@@ -332,11 +456,16 @@ def waypoint_list_cb(req):
     # Send desired wp radius according to first waypoint of list
     # Send for ArduCopter, divide by 10 to put in cm
     master.mav.param_set_send(master.target_system, master.target_component, "WPNAV_RADIUS",
-        req.waypoints[0].posAcc/10, mavutil.mavlink.MAV_PARAM_TYPE_REAL32)
+        req.waypoints[0].pos_acc/10, mavutil.mavlink.MAV_PARAM_TYPE_REAL32)
 
     # Send for ArduRover, divide by 1000 to put in meters
     master.mav.param_set_send(master.target_system, master.target_component, "WP_RADIUS",
-        req.waypoints[0].posAcc/1000, mavutil.mavlink.MAV_PARAM_TYPE_REAL32)
+        req.waypoints[0].pos_acc/1000, mavutil.mavlink.MAV_PARAM_TYPE_REAL32)
+
+    # If it is desired to store
+#    rospy.sleep(1)
+#    master.mav.command_long_send(master.target_system, master.target_component,
+#                                 mavutil.mavlink.MAV_CMD_PREFLIGHT_STORAGE, 0, 0, 0, 0, 0, 0, 0, 0)
 
 
     rospy.loginfo("Waypoints Sent")
@@ -406,20 +535,20 @@ def launch():
     dummy_wp = roscopter.msg.Waypoint()
     dummy_wp.latitude = gps_msg.latitude
     dummy_wp.longitude = gps_msg.longitude
+    dummy_wp.waypoint_type = roscopter.msg.Waypoint.TYPE_TAKEOFF
     
-    transmit_waypoint(dummy_wp, 0, mavutil.mavlink.MAV_CMD_NAV_TAKEOFF)
-    
-    # Send Dummy Waypoint
-    dummy_wp = roscopter.msg.Waypoint()
-    dummy_wp.latitude = gps_msg.latitude
-    dummy_wp.longitude = gps_msg.longitude
-    
+    if (not transmit_waypoint(dummy_wp, 0)):
+        rospy.loginfo("Launch Failed")
+        return False
 
     launch_wp = roscopter.msg.Waypoint()
     launch_wp.latitude = gps_msg.latitude
     launch_wp.longitude = gps_msg.longitude
     launch_wp.altitude = opts.launch_altitude
-    transmit_waypoint(launch_wp, 1, mavutil.mavlink.MAV_CMD_NAV_TAKEOFF)
+    launch_wp.waypoint_type = roscopter.msg.Waypoint.TYPE_TAKEOFF
+    if (not transmit_waypoint(launch_wp, 1)):
+        rospy.loginfo("Launch Failed")
+        return False
 
     # Set Launch Waypoint as Current Waypoint
     set_current_waypoint(1)
@@ -436,7 +565,21 @@ def launch():
     rospy.sleep(1)
     master.mav.rc_channels_override_send(master.target_system, master.target_component, 0, 0, 0, 0, 0, 0, 0, 0)
 
+    start_time = rospy.Time.from_sec(time.time()).to_nsec()
+
+    # Once Launched, mode should be auto until launch is complete, resulting
+    # in setting to "LOITER".
+    # Loop until mode is set or timeout
+    while (not state_msg.mode == "LOITER"):
+        if (not (start_time + opts.launch_timeout*1000000) > rospy.Time.from_sec(time.time()).to_nsec()):
+            rospy.loginfo("Timed out while launching")
+            return False
+
+        rospy.sleep(0.01)
+
     rospy.loginfo ("Vehicle Launched")
+
+    return True
     
 # Land the vehicle
 def land():
@@ -491,6 +634,7 @@ if opts.enable_waypoint_control:
 # Global Message containers
 #*******************************************************************************
 gps_msg = NavSatFix()
+state_msg = roscopter.msg.State()
 current_mission_msg = roscopter.msg.CurrentMission()
 
 ##******************************************************************************
@@ -529,6 +673,9 @@ def mainloop():
                 pub_state.publish(msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED, 
                                   msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_GUIDED_ENABLED, 
                                   mavutil.mode_string_v10(msg))
+
+                state_msg.armed = msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED
+                state_msg.mode = mavutil.mode_string_v10(msg)
             elif msg_type == "VFR_HUD":
                 pub_vfr_hud.publish(msg.airspeed, msg.groundspeed, msg.heading, msg.throttle, msg.alt, msg.climb)
 

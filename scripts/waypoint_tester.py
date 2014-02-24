@@ -17,13 +17,15 @@ def publish_waypt():
             wayptMsg.latitude = (29.662161 + i) * 1E7
             wayptMsg.longitude = (-82.3777551 + i) * 1E7
             wayptMsg.altitude = 100 + i;
-            wayptMsg.posAcc = (10 + i) * 1000;
-            wayptMsg.speedTo = 20 + i;
+            wayptMsg.pos_acc = (10 + i) * 1000;
+            wayptMsg.speed_to = 20 + i;
             wayptMsg.altitude = (30 + i) * 1000;
-            wayptMsg.holdTime = (40 + i) * 1000;        # Assume defined in seconds
-            wayptMsg.yawFrom = (50 + i) * 1000;
+            wayptMsg.hold_time = (40 + i) * 1000;        # Assume defined in seconds
+            wayptMsg.yaw_from = (50 + i) * 1000;
 
-            wayptListMsg.waypoints.append(wayptMsg);
+            wayptMsg.waypoint_type = roscopter.msg.Waypoint.TYPE_NAV
+
+            wayptListMsg.waypoints.append(wayptMsg)
 
         rospy.sleep(1.0)
         wayptListPub.publish(wayptListMsg)
