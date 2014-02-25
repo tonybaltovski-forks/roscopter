@@ -38,6 +38,8 @@ add_message_files(
 add_service_files(
   FILES
   APMCommand.srv
+  SendWaypoint.srv
+  SendWaypointList.srv
   XBEECommand.srv
 )
 
