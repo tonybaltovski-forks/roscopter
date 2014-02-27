@@ -135,10 +135,10 @@ def command_cb(req):
     if req.command == roscopter.srv._APMCommand.APMCommandRequest.CMD_LAUNCH:
         rospy.loginfo ("Launch Command")
         if (not launch()):
-            # Assume that if launch fails, we may still be in the air and should land
-            master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, LAND)
-            rospy.sleep(0.1)
-            master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, LAND)
+#            # Assume that if launch fails, we may still be in the air and should land
+#            master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, LAND)
+#            rospy.sleep(0.1)
+#            master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, LAND)
 
             return False
 
