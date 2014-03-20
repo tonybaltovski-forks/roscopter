@@ -42,7 +42,7 @@ parser.add_option("--waypoint-timeout", dest="waypoint_timeout", default=500,
                   type='int', help="Waypoint transmission timeout in milli-seconds")
 parser.add_option("--arm-timeout", dest="arm_timeout", default=10000,
                   type='int', help="Arming/Disarming timeout in milli-seconds")
-parser.add_option("--launch-timeout", dest="launch_timeout", default=30000,
+parser.add_option("--launch-timeout", dest="launch_timeout", default=15000,
                   type='int', help="Launch timeout in milli-seconds")
 parser.add_option("--mode-timeout", dest="mode_timeout", default=1000,
                   type='int', help="Mode timeout in milli-seconds")
@@ -621,15 +621,20 @@ def launch():
 
     start_time = rospy.Time.from_sec(time.time()).to_nsec()
 
+    # THIS WAS WRONG, DOES NOT SWITCH TO LOITER.
+    # INSTEAD, USE TIMER TO SPECIFY HOW LONG LAUNCH SHOULD TAKE
     # Once Launched, mode should be auto until launch is complete, resulting
     # in setting to "LOITER".
     # Loop until mode is set or timeout
-    while (not state_msg.mode == "LOITER"):
-        if (not (start_time + opts.launch_timeout*1000000) > rospy.Time.from_sec(time.time()).to_nsec()):
-            rospy.loginfo("Timed out while launching")
-            return False
-
+    while (not (start_time + opts.launch_timeout*1000000) > rospy.Time.from_sec(time.time()).to_nsec()):
         rospy.sleep(0.01)
+    
+#    while (not state_msg.mode == "LOITER"):
+#        if (not (start_time + opts.launch_timeout*1000000) > rospy.Time.from_sec(time.time()).to_nsec()):
+#            rospy.loginfo("Timed out while launching")
+#            return False
+
+#        rospy.sleep(0.01)
 
     rospy.loginfo ("Vehicle Launched")
 
