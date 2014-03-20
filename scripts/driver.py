@@ -1,12 +1,13 @@
 #!/usr/bin/env python
 import rospy
-from std_msgs.msg import String, Header
+from std_msgs.msg import String, Header, Bool
 from std_srvs.srv import *
 from sensor_msgs.msg import NavSatFix, NavSatStatus, Imu
 import roscopter.msg
 import roscopter.srv
 import sys,struct,time,os
 import math
+import xmlrpclib
 
 ##******************************************************************************
 # Parse any arguments that follow the node command
@@ -27,6 +28,8 @@ parser.add_option("--mavlink-rate", dest="mavlink_rate", default=10,
                   type='int', help="requested stream rate")
 parser.add_option("--source-system", dest='SOURCE_SYSTEM', type='int',
                   default=255, help='MAVLink source system for this GCS')
+parser.add_option("--enable-watchdog",dest="enable_watchdog", default=False,
+                  help="enable watchdog")
 parser.add_option("--enable-rc-control",dest="enable_rc_control", default=False,
                   help="enable listening to control messages")
 parser.add_option("--enable-waypoint-control",dest="enable_waypoint_control",
@@ -43,6 +46,13 @@ parser.add_option("--launch-timeout", dest="launch_timeout", default=30000,
                   type='int', help="Launch timeout in milli-seconds")
 parser.add_option("--mode-timeout", dest="mode_timeout", default=1000,
                   type='int', help="Mode timeout in milli-seconds")
+parser.add_option("--max-watchdog-time", dest="max_watchdog_time", default=3,
+                  type='int', help="Max time in seconds before watchdog takes over")
+parser.add_option("--watchdog-rate", dest="watchdog_rate", default=1,
+                  type='int', help="Rate at which watchdog should check")
+parser.add_option("--enable-ros-failsafe", dest="enable_ros_failsafe", default=False,
+                  help="Enable Failsafe function to land vehicle if ROS shuts down")
+
 
 (opts, args) = parser.parse_args()
 
@@ -145,7 +155,9 @@ def command_cb(req):
         return True
     elif req.command == roscopter.srv._APMCommand.APMCommandRequest.CMD_LAND:
         rospy.loginfo ("Land Command")
-        land()
+        master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, LAND)
+        rospy.sleep(0.1)
+        master.mav.set_mode_send(master.target_system, mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, LAND)
 
         # Loop until mode is set or timeout
         start_time = rospy.Time.from_sec(time.time()).to_nsec()
@@ -436,12 +448,13 @@ def waypoint_cb(req):
 
     # Send desired wp radius according to first waypoint of list
     # Send for ArduCopter, divide by 10 to put in cm
-    master.mav.param_set_send(master.target_system, master.target_component, "WPNAV_RADIUS",
-        req.waypoint.pos_acc/10, mavutil.mavlink.MAV_PARAM_TYPE_REAL32)
-
-    # Send for ArduRover, divide by 1000 to put in meters
-    master.mav.param_set_send(master.target_system, master.target_component, "WP_RADIUS",
-        req.waypoint.pos_acc/1000, mavutil.mavlink.MAV_PARAM_TYPE_REAL32) 
+    if (opts.type == "ArduCopter"):
+        master.mav.param_set_send(master.target_system, master.target_component, "WPNAV_RADIUS",
+            req.waypoint.pos_acc/10, mavutil.mavlink.MAV_PARAM_TYPE_REAL32)
+    elif (opts.type == "ArduRover"):
+        # Send for ArduRover, divide by 1000 to put in meters
+        master.mav.param_set_send(master.target_system, master.target_component, "WP_RADIUS",
+            req.waypoint.pos_acc/1000, mavutil.mavlink.MAV_PARAM_TYPE_REAL32) 
 
     rospy.loginfo ("Waypoint Sent")
 
@@ -623,16 +636,38 @@ def launch():
     
 # Land the vehicle
 def land():
+    pass
+#    master.mav.rc_channels_override_send(master.target_system, master.target_component, 65535, 65535, 1150, 65535, 65535, 65535, 65535, 65535)
+
+#    # Land Command
+#    master.mav.command_long_send(master.target_system, master.target_component,
+#                                 mavutil.mavlink.MAV_CMD_NAV_LAND, 0, 0,
+#                                 0, 0, 0,
+#                                 0, 0, 0)
+#    rospy.loginfo ("Land Command")
+
+watchdog_time = 0
+
+def failsafe_land(event):
+    rospy.loginfo("Setting to land due to failsafe")
+        
+    while (not state_msg.mode == "LAND"):
+        land()
+        rospy.sleep(0.1)
+        
+    rospy.loginfo("Landing due to failsafe")
+
+def watchdog_timer_cb(event):
+    global watchdog_time
     
-    master.mav.rc_channels_override_send(master.target_system, master.target_component, 65535, 65535, 1150, 65535, 65535, 65535, 65535, 65535)
-
-    # Land Command
-    master.mav.command_long_send(master.target_system, master.target_component,
-                                 mavutil.mavlink.MAV_CMD_NAV_LAND, 0, 0,
-                                 0, 0, 0,
-                                 0, 0, 0)
-    rospy.loginfo ("Land Command")
-
+    if ((event.current_real.to_sec() - watchdog_time) > opts.max_watchdog_time):
+        print("Watchdog Failed at " + str(event.current_real))
+        failsafe_land()
+    
+def watchdog_cb(msg):
+    global watchdog_time
+    watchdog_time = rospy.get_time()
+    rospy.loginfo('Watchdog polled at ' + str(watchdog_time))
 
 ##******************************************************************************
 # Publisher and Subscribers to be used for ROS communications of sensor or 
@@ -659,6 +694,12 @@ pub_mission_item = rospy.Publisher('mission_item', roscopter.msg.MissionItem)
 rospy.Service("command", roscopter.srv.APMCommand, command_cb)
 
 ##******************************************************************************
+# Start Heartbeat subscriber and timer
+#*******************************************************************************
+if opts.enable_watchdog:
+    rospy.Subscriber("watchdog", Bool, watchdog_cb)
+
+##******************************************************************************
 # Optional Controls
 #*******************************************************************************
 # Allow For RC Control
@@ -677,6 +718,26 @@ gps_msg = NavSatFix()
 state_msg = roscopter.msg.State()
 current_mission_msg = roscopter.msg.CurrentMission()
 
+
+##******************************************************************************
+ # Name:    ros_failsafe
+ # Purpose: Function to check and confirm that ROS is still running. If ROS Core
+ #              has shutdown, the land command should be sent.
+#*******************************************************************************
+caller_id = '/roscopter'
+m = xmlrpclib.ServerProxy(os.environ['ROS_MASTER_URI'])
+failsafe_triggered = False
+def ros_failsafe_check():
+    global failsafe_triggered
+    
+    if (not failsafe_triggered):
+        try:
+            m.getUri(caller_id)
+        except:
+            print("ROSCore Failed, Land Vehicle")
+            rospy.Timer(rospy.Duration(1), failsafe_land, True)
+            failsafe_triggered = True
+
 ##******************************************************************************
  # Name:    mainloop
  # Purpose: Main loop to initialize ROS node and parse data read from the
@@ -689,17 +750,23 @@ mission_request_buffer = []
 def mainloop():
     global gps_msg
     rospy.init_node('roscopter')
+    
+    if opts.enable_watchdog:
+        rospy.Timer(rospy.Duration(1/opts.watchdog_rate), watchdog_timer_cb)
 
     # SEND IF YOU DESIRE A LIST OF ALL PARAMS (TODO: Publish params to a topic)
     #master.mav.param_request_list_send(master.target_system, master.target_component)
 
     r = rospy.Rate(opts.rate)
     while not rospy.is_shutdown():
+        if (opts.enable_ros_failsafe):
+            ros_failsafe_check()
+    
         r.sleep()
         msg = master.recv_match(blocking=False)
         if not msg:
             continue
-
+        
         # Parse incoming message
         if msg.get_type() == "BAD_DATA":
             if mavutil.all_printable(msg.data):
