@@ -498,10 +498,11 @@ def waypoint_list_cb(req):
     set_current_waypoint(1)
 
     # Send desired wp radius according to first waypoint of list
-    # Send for ArduCopter, divide by 10 to put in cm
-    master.mav.param_set_send(master.target_system, master.target_component, "WPNAV_RADIUS",
-        req.waypoints[0].pos_acc/10, mavutil.mavlink.MAV_PARAM_TYPE_REAL32)
-
+    if (opts.type == "ArduCopter"):
+        # Send for ArduCopter, divide by 10 to put in cm
+        master.mav.param_set_send(master.target_system, master.target_component, "WPNAV_RADIUS",
+            req.waypoints[0].pos_acc/10, mavutil.mavlink.MAV_PARAM_TYPE_REAL32)
+    elif (opts.type == "ArduCopter"):
     # Send for ArduRover, divide by 1000 to put in meters
     master.mav.param_set_send(master.target_system, master.target_component, "WP_RADIUS",
         req.waypoints[0].pos_acc/1000, mavutil.mavlink.MAV_PARAM_TYPE_REAL32)
