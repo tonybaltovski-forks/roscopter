@@ -626,8 +626,9 @@ def launch():
     # Once Launched, mode should be auto until launch is complete, resulting
     # in setting to "LOITER".
     # Loop until mode is set or timeout
-    while (not (start_time + opts.launch_timeout*1000000) > rospy.Time.from_sec(time.time()).to_nsec()):
+    while ((start_time + opts.launch_timeout*1000000) > rospy.Time.from_sec(time.time()).to_nsec()):
         rospy.sleep(0.01)
+        rospy.loginfo("Vehicle Launching")
     
 #    while (not state_msg.mode == "LOITER"):
 #        if (not (start_time + opts.launch_timeout*1000000) > rospy.Time.from_sec(time.time()).to_nsec()):
