@@ -59,7 +59,7 @@ parser.add_option("--max-watchdog-time", dest="max_watchdog_time", default=3,
 parser.add_option("--watchdog-rate", dest="watchdog_rate", default=1,
                   type='int', help="Rate at which watchdog should check")
                   
-parser.add_option("--enable-ros-failsafe", dest="enable_ros_failsafe", default=True,
+parser.add_option("--enable-ros-failsafe", dest="enable_ros_failsafe", default=False,
                   help="Enable Failsafe function to land vehicle if ROS shuts down")
 
 parser.add_option("--enable-autonomous-control", dest="enable_autonomous_safety_switch", default=False,
