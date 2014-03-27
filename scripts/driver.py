@@ -36,13 +36,15 @@ parser.add_option("--enable-rc-control",dest="enable_rc_control", default=True,
 parser.add_option("--enable-waypoint-control",dest="enable_waypoint_control",
                   default=True, help="enable listening to waypoint messages")
                   
+# Altitude Safety Parameters
 parser.add_option("--launch-altitude",dest="launch_altitude", default=10000, 
                   type='int', help="default launch altitude in milli-meters")
 parser.add_option("--minimum-waypoint-altitude", dest="minimum_mission_altitude", default=5000,
                   type='int', help="Minimum altitude waypoints must have to be accepted (milli-meters)")
 parser.add_option("--maximum-altitude", dest="maximum_altitude", default=50000,
                   type='int', help="Maximum allowable altitude for vehicle to fly")
-                  
+
+# State and command Timeouts
 parser.add_option("--waypoint-timeout", dest="waypoint_timeout", default=500,
                   type='int', help="Waypoint transmission timeout in milli-seconds")
 parser.add_option("--arm-timeout", dest="arm_timeout", default=10000,
@@ -51,17 +53,20 @@ parser.add_option("--launch-timeout", dest="launch_timeout", default=15000,
                   type='int', help="Launch timeout in milli-seconds")
 parser.add_option("--mode-timeout", dest="mode_timeout", default=1000,
                   type='int', help="Mode timeout in milli-seconds")
-                  
+
+# Watchdog parameters                  
 parser.add_option("--enable-watchdog",dest="enable_watchdog", default=False,
                   help="enable watchdog")
 parser.add_option("--max-watchdog-time", dest="max_watchdog_time", default=3,
                   type='int', help="Max time in seconds before watchdog takes over")
 parser.add_option("--watchdog-rate", dest="watchdog_rate", default=1,
                   type='int', help="Rate at which watchdog should check")
-                  
+
+# ROS Failsafe
 parser.add_option("--enable-ros-failsafe", dest="enable_ros_failsafe", default=False,
                   help="Enable Failsafe function to land vehicle if ROS shuts down")
 
+# Autonomous Enable switch Parameters
 parser.add_option("--enable-autonomous-control", dest="enable_autonomous_safety_switch", default=False,
                   help="Enable Listening for Autonomous Enable Switch on Specified Channel")                  
 parser.add_option("--autonomous-channel-id", dest="autonomous_channel_id", default=6,
@@ -433,10 +438,6 @@ def command_cb(req):
  #              https://pixhawk.ethz.ch/mavlink/
 #*******************************************************************************
 def transmit_waypoint(data, index):
-    if (data.altitude < opts.minimum_mission_altitude):
-        rospy.loginfo("Waypoint Altitude below minimum allowable altitude")
-        return False
-
     rospy.loginfo("Sending Waypoint " + str(index))
 
     start_time = rospy.Time.from_sec(time.time()).to_nsec()
@@ -546,16 +547,21 @@ def waypoint_cb(req):
     dummy_wp.longitude = gps_msg.longitude
     dummy_wp.waypoint_type = roscopter.msg.Waypoint.TYPE_NAV
     
-    # Transmit waypoint, confirm transmission
+    # Transmit Dummy waypoint, confirm transmission
     if (not transmit_waypoint(dummy_wp, 0)):
         rospy.loginfo("Waypoint Transmission Failed")
-
         return False
 
-    # Send waypoint
+    # Check and confirm altitude of waypoint is greater than minimum altitude
+    # if usign ArduCopter
+    if (opts.type == "ArduCopter"):
+        if (req.waypoint.altitude < opts.minimum_mission_altitude):
+            rospy.loginfo("Waypoint Altitude below minimum allowable altitude")
+            return False
+
+    # Send waypoint transmitted by client
     if (not transmit_waypoint(req.waypoint, 1)):
         rospy.loginfo("Waypoint Transmission Failed")
-
         return False
 
     # Set current waypoint to be waypoint 1
@@ -591,11 +597,10 @@ def waypoint_list_cb(req):
     if (opts.enable_autonomous_safety_switch):
         if (not autonomous_enable):
             return False
-            
-    rospy.loginfo ("Sending Waypoint list")
 
     # Number of waypoints (Plus Dummy Waypoint)
     sizeOfWaypointList = len(req.waypoints)
+    rospy.loginfo ("Sending Waypoint list of " + str(sizeOfWaypointList) + " items" )
     master.mav.mission_count_send(master.target_system, master.target_component, sizeOfWaypointList + 1)
 
     # Send Dummy Waypoint
@@ -609,13 +614,27 @@ def waypoint_list_cb(req):
         return False
         
     # Send entire list of waypoints
-    rospy.loginfo("***************************************************")
-    for i in range(0, sizeOfWaypointList):
-        if (not transmit_waypoint(req.waypoints[i], i+1)):
-            rospy.loginfo("Waypoint List Transmission Failed")
-            return False
-    rospy.loginfo("***************************************************")
-
+    if (opts.type == "ArduCopter"):
+        rospy.loginfo("***************************************************")
+        for i in range(0, sizeOfWaypointList):
+            # Check and confirm altitude of each waypoint is greater than minimum altitude
+            # if using ArduCopter
+            if (req.waypoint[i].altitude < opts.minimum_mission_altitude):
+                rospy.loginfo("Waypoint Altitude below minimum allowable altitude")
+                return False
+                    
+            if (not transmit_waypoint(req.waypoints[i], i+1)):
+                rospy.loginfo("Waypoint List Transmission Failed")
+                return False
+        rospy.loginfo("***************************************************")
+    elif (opts.type == "ArduRover"):
+        rospy.loginfo("***************************************************")
+        for i in range(0, sizeOfWaypointList):
+            if (not transmit_waypoint(req.waypoints[i], i+1)):
+                rospy.loginfo("Waypoint List Transmission Failed")
+                return False
+        rospy.loginfo("***************************************************")
+        
     # Set Current Waypoint
     set_current_waypoint(1)
 
