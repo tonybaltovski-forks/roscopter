@@ -1161,8 +1161,8 @@ if __name__ == '__main__':
     try:
         # initially clear waypoints and start mainloop
         clear_waypoints()
-        if (opts.enable_ros_failsafe):
-            rospy.Timer(rospy.Duration(1), ros_failsafe_check)
+#        if (opts.enable_ros_failsafe):
+#            rospy.Timer(rospy.Duration(1), ros_failsafe_check)        
         mainloop()
     except rospy.ROSInterruptException: pass
     
