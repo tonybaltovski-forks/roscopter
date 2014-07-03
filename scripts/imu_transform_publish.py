@@ -96,6 +96,6 @@ def imu_callback(msg):
 
 if __name__ == '__main__':
     rospy.init_node("imupub")
-    rospy.Subscriber("/raw_imu", Mavlink_RAW_IMU, imu_callback)
-    rospy.Subscriber("/attitude", Attitude, attitude_callback)
+    rospy.Subscriber("raw_imu", Mavlink_RAW_IMU, imu_callback)
+    rospy.Subscriber("attitude", Attitude, attitude_callback)
     rospy.spin()
