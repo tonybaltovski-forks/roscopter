@@ -1049,10 +1049,20 @@ def mainloop():
                 rospy.loginfo("Local Pos: (%f %f %f) , (%f %f %f)" %(msg.x, msg.y, msg.z, msg.vx, msg.vy, msg.vz))
 
             elif msg_type == "RAW_IMU" :
-                pub_raw_imu.publish (Header(), msg.time_usec, 
-                                     msg.xacc, msg.yacc, msg.zacc, 
-                                     msg.xgyro, msg.ygyro, msg.zgyro,
-                                     msg.xmag, msg.ymag, msg.zmag)
+		raw_imu_msg = roscopter.msg.Mavlink_RAW_IMU()
+		raw_imu_msg.header.stamp = rospy.Time.now()
+		raw_imu_msg.header.frame_id = "imu"
+		raw_imu_msg.time_usec = msg.time_usec
+		raw_imu_msg.xacc = msg.xacc
+		raw_imu_msg.yacc = msg.yacc
+		raw_imu_msg.zacc = msg.zacc
+		raw_imu_msg.xgyro = msg.xgyro
+		raw_imu_msg.ygyro = msg.ygyro
+		raw_imu_msg.zgyro = msg.zgyro
+		raw_imu_msg.xmag = msg.xmag
+		raw_imu_msg.ymag = msg.ymag
+		raw_imu_msg.zmag = msg.zmag
+                pub_raw_imu.publish(raw_imu_msg)
 
             elif msg_type == "SYS_STATUS":
                 status_msg = roscopter.msg.Status()
