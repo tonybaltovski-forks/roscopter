@@ -1062,7 +1062,7 @@ def mainloop():
 		raw_imu_msg.xmag = msg.xmag
 		raw_imu_msg.ymag = msg.ymag
 		raw_imu_msg.zmag = msg.zmag
-                pub_raw_imu.publish(raw_imu_msg)
+		pub_raw_imu.publish(raw_imu_msg)
 
             elif msg_type == "SYS_STATUS":
                 status_msg = roscopter.msg.Status()
