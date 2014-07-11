@@ -883,7 +883,7 @@ if opts.enable_watchdog:
 #*******************************************************************************
 # Allow For RC Control
 if opts.enable_rc_control:
-    rospy.Subscriber("send_rc", roscopter.msg.RC , send_rc_cb)
+    rospy.Subscriber("send_rc", roscopter.msg.RC , send_rc_cb , tcp_nodelay=True)
 
 # Allow for Waypoint Control
 if opts.enable_waypoint_control:
