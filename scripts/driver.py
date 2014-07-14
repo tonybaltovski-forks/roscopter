@@ -1051,7 +1051,7 @@ def mainloop():
             elif msg_type == "RAW_IMU" :
 		raw_imu_msg = roscopter.msg.Mavlink_RAW_IMU()
 		raw_imu_msg.header.stamp = rospy.Time.now()
-		raw_imu_msg.header.frame_id = "imu"
+		raw_imu_msg.header.frame_id = "raw_imu"
 		raw_imu_msg.time_usec = msg.time_usec
 		raw_imu_msg.xacc = msg.xacc
 		raw_imu_msg.yacc = msg.yacc
