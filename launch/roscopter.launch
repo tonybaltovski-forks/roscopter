@@ -1,5 +1,5 @@
 <launch>
-  <node ns="apm" pkg="roscopter" type="driver.py" name="roscopter" respawn="true" output="screen" args="--device=/dev/ttyACM0 --baudrate=115200 --enable-rc-control=true">
+  <node ns="apm" pkg="roscopter" type="driver.py" name="roscopter" respawn="true" output="screen" args="--device=/dev/ttyACM0 --baudrate=115200 --enable-rc-control=true --mavlink-rate=25">
   </node>
 </launch>
 
