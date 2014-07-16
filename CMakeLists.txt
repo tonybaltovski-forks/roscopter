@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.8.3)
 project(roscopter)
 
 find_package(catkin REQUIRED COMPONENTS geometry_msgs rospy sensor_msgs std_msgs message_generation)
-
+find_package(mavlink REQUIRED)
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
 
@@ -49,6 +49,17 @@ generate_messages(
   geometry_msgs#   sensor_msgs#   std_msgs
 )
 
+if(NOT DEFINED mavlink_DIALECTS)
+  list(APPEND mavlink_DIALECTS "ardupilotmega")
+  list(APPEND mavlink_DIALECTS "pixhawk")
+  list(APPEND mavlink_DIALECTS "common")
+endif()
+
+set(MAVLINK_DIALECT "ardupilotmega" CACHE STRING "MAVLink dialect selector")
+set_property(CACHE MAVLINK_DIALECT PROPERTY STRINGS ${mavlink_DIALECTS})
+
+
+
 ###################################
 ## catkin specific configuration ##
 ###################################
@@ -62,7 +73,7 @@ catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES roscopter 
   CATKIN_DEPENDS geometry_msgs rospy sensor_msgs std_msgs message_runtime
-#  DEPENDS system_lib
+  DEPENDS mavlink
 )
 
 ###########
@@ -74,8 +85,12 @@ catkin_package(
 # include_directories(include)
 include_directories(
   ${catkin_INCLUDE_DIRS}
+  ${mavlink_INCLUDE_DIRS}
 )
 
+add_definitions(
+    -DMAVLINK_DIALECT=${MAVLINK_DIALECT}
+)
 ## Declare a cpp library
 # add_library(roscopter
 #   src/${PROJECT_NAME}/roscopter.cpp
