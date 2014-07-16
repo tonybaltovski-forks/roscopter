@@ -110,7 +110,8 @@ else:
 ##******************************************************************************
 # Import and connect to the apm through mavlink
 #*******************************************************************************
-import mavutil
+from pymavlink import mavutil
+
 
 # create a mavlink serial instance
 master = mavutil.mavlink_connection(opts.device, baud=opts.baudrate)
