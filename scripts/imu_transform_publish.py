@@ -16,6 +16,9 @@ from std_msgs.msg import Header
 from roscopter.msg import *
 import tf
 # ROSCopter Messages are in NED, so imu data must be converted to ENU
+# The accelerometer and gyroscope are in the body frame of the aircraft
+# The magnetometer is on the Global frame
+# Global frame conversion
 # To rotate RPY, the following may be used
 #   RPY(ENU) = [0 1 0; 1 0 0; 0 0 -1] [RPY](NED)
 # To convert the quaternion ENU = NED
@@ -24,8 +27,9 @@ import tf
 #   x = y, y = x, z = -z
 # To convert velocity ENU = NED
 #   x = y, y = x, z = -z
+# Body fixed frame
+# [x,y,z] = [x,-y,-z]
 
-grad2rad = 3.141592/180.0
 
 # Initial IMU Message holder with generic covariances
 imuMsg = Imu()
@@ -51,9 +55,9 @@ def attitude_callback(msg):
     global yaw, pitch, roll, attitude_received_flag
 
     # Convert RPY from NED to ENU
-    yaw = -float(msg.yaw)
-    pitch = float(msg.pitch)
-    roll = float(msg.roll)
+    yaw   = -float(msg.yaw)
+    pitch = -float(msg.pitch)
+    roll  =  float(msg.roll)
 
     if (attitude_received_flag==0):
         attitude_received_flag=1
@@ -61,13 +65,13 @@ def attitude_callback(msg):
 def imu_callback(msg):
     # Form IMU Message
 
-    # Convert Acceleration and Velocity from NED to ENU
-    imuMsg.linear_acceleration.x = float(msg.xacc) / 1000 * 9.80665
-    imuMsg.linear_acceleration.y = float(msg.yacc) / 1000 * 9.80665
+    # Convert Acceleration and Velocity from NED to ENU in body frame
+    imuMsg.linear_acceleration.x =  float(msg.xacc) / 1000 * 9.80665
+    imuMsg.linear_acceleration.y = -float(msg.yacc) / 1000 * 9.80665
     imuMsg.linear_acceleration.z = -float(msg.zacc) / 1000 * 9.60665
            
-    imuMsg.angular_velocity.x = float(msg.xgyro) / 1000
-    imuMsg.angular_velocity.y = float(msg.ygyro) / 1000
+    imuMsg.angular_velocity.x =  float(msg.xgyro) / 1000
+    imuMsg.angular_velocity.y = -float(msg.ygyro) / 1000
     imuMsg.angular_velocity.z = -float(msg.zgyro) / 1000
             
     # Convert RPY values from Attitude to Quaternion
