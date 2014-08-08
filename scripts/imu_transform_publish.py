@@ -80,8 +80,7 @@ def imu_callback(msg):
     imuMsg.orientation.y = q[1]
     imuMsg.orientation.z = q[2]
     imuMsg.orientation.w = q[3]
-    imuMsg.header = Header()
-    imuMsg.header.stamp= rospy.Time.now()
+    imuMsg.header = msg.header
     imuMsg.header.frame_id = 'imu'
 
     # If Attitude has been received, publish IMU Message and Transform
